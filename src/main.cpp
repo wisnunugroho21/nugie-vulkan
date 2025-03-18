@@ -1,5 +1,9 @@
 #include <lvk/LVK.h>
 #include <GLFW/glfw3.h>
+
+#include <glm/glm.hpp>
+#include <glm/ext.hpp>
+
 #include <unordered_map>
 
 std::unordered_map<uint32_t, std::string> debugGLSLSourceCode;
@@ -56,25 +60,25 @@ bool endsWith(const char* s, const char* part) {
 }
 
 lvk::ShaderStage lvkShaderStageFromFilename(const char* fileName) {
-if (endsWith(fileName, ".vert"))
+    if (endsWith(fileName, ".vert"))
+        return lvk::Stage_Vert;
+
+    if (endsWith(fileName, ".frag"))
+        return lvk::Stage_Frag;
+
+    if (endsWith(fileName, ".geom"))
+        return lvk::Stage_Geom;
+
+    if (endsWith(fileName, ".comp"))
+        return lvk::Stage_Comp;
+
+    if (endsWith(fileName, ".tesc"))
+        return lvk::Stage_Tesc;
+
+    if (endsWith(fileName, ".tese"))
+        return lvk::Stage_Tese;
+
     return lvk::Stage_Vert;
-
-  if (endsWith(fileName, ".frag"))
-    return lvk::Stage_Frag;
-
-  if (endsWith(fileName, ".geom"))
-    return lvk::Stage_Geom;
-
-  if (endsWith(fileName, ".comp"))
-    return lvk::Stage_Comp;
-
-  if (endsWith(fileName, ".tesc"))
-    return lvk::Stage_Tesc;
-
-  if (endsWith(fileName, ".tese"))
-    return lvk::Stage_Tese;
-
-  return lvk::Stage_Vert;
 }
 
 lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(const std::unique_ptr<lvk::IContext>& context, const char* fileName) {
@@ -111,15 +115,43 @@ int main(int argc, char *argv[]) {
         lvk::Holder<lvk::ShaderModuleHandle> vert = loadShaderModule(context, "../../src/main.vert");
         lvk::Holder<lvk::ShaderModuleHandle> frag = loadShaderModule(context, "../../src/main.frag");
 
-        lvk::Holder<lvk::RenderPipelineHandle> rpTriangle = context->createRenderPipeline({
+        lvk::Holder<lvk::RenderPipelineHandle> pipelineSolid = context->createRenderPipeline({
             .smVert = vert,
             .smFrag = frag,
             .color = {
                 {
                     .format = context->getSwapchainFormat()
                 }
-            }
+            },
+            .cullMode = lvk::CullMode_Back
         });
+
+        const uint32_t isWireframe = 1;
+
+        lvk::Holder<lvk::RenderPipelineHandle> pipelineWireframe = context->createRenderPipeline({
+            .smVert = vert,
+            .smFrag = frag,
+            .specInfo = {
+                .entries = {
+                    {
+                        .constantId = 0,
+                        .size = sizeof(uint32_t)
+                    }
+                },
+                .data = &isWireframe,
+                .dataSize = sizeof(isWireframe)
+            },
+            .color = {
+                {
+                    .format = context->getSwapchainFormat()
+                }
+            },
+            .cullMode = lvk::CullMode_Back,
+            .polygonMode = lvk::PolygonMode_Line
+        });
+
+        LVK_ASSERT(pipelineSolid.valid());
+        LVK_ASSERT(pipelineWireframe.valid());
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
@@ -128,6 +160,18 @@ int main(int argc, char *argv[]) {
             if (!width || !height) {
                 continue;
             }
+
+            const float ratio = width / (float) height;
+
+            const glm::mat4 m = glm::rotate(
+                glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.5f)),
+                (float) glfwGetTime(),
+                glm::vec3(1.0f, 1.0f, 1.0f)
+            );
+
+            const glm::mat4 p = glm::perspective(
+                45.0f, ratio, 0.1f, 1000.0f
+            );
 
             lvk::ICommandBuffer& commandBuffer = context->acquireCommandBuffer();
 
@@ -149,10 +193,24 @@ int main(int argc, char *argv[]) {
                 }
             );
 
-            commandBuffer.cmdBindRenderPipeline(rpTriangle);
-            commandBuffer.cmdPushDebugGroupLabel("Render Triangle", 0xff0000ff);
-            commandBuffer.cmdDraw(3);
+            commandBuffer.cmdPushDebugGroupLabel("Solid Cube", 0xff0000ff);
+
+            {
+                commandBuffer.cmdBindRenderPipeline(pipelineSolid);
+                commandBuffer.cmdPushConstants(p * m);
+                commandBuffer.cmdDraw(36);
+            }
+
             commandBuffer.cmdPopDebugGroupLabel();
+            commandBuffer.cmdPushDebugGroupLabel("Wireframe Cube", 0xff0000ff);
+            
+            {
+                commandBuffer.cmdBindRenderPipeline(pipelineWireframe);
+                commandBuffer.cmdPushConstants(p * m);
+                commandBuffer.cmdDraw(36);
+            }
+
+            commandBuffer.cmdPopDebugGroupLabel();            
             commandBuffer.cmdEndRendering();
 
             context->submit(commandBuffer, context->getCurrentSwapchainTexture());
