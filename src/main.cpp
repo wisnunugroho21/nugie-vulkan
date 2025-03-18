@@ -1,7 +1,10 @@
 #include <lvk/LVK.h>
 #include <GLFW/glfw3.h>
+#include <unordered_map>
 
-/* std::string readShaderFile(const char* fileName) {
+std::unordered_map<uint32_t, std::string> debugGLSLSourceCode;
+
+std::string readShaderFile(const char* fileName) {
     FILE* file = fopen(fileName, "r");
 
     if (!file) {
@@ -22,9 +25,8 @@
     static constexpr unsigned char BOM[] = { 0xEF, 0xBB, 0xBF };
 
     if (bytesread > 3) {
-        if (!memcmp(buffer, BOM, 3)) {
-            memset(buffer, ' ', 3);
-        }      
+        if (!memcmp(buffer, BOM, 3))
+        memset(buffer, ' ', 3);
     }
 
     std::string code(buffer);
@@ -47,41 +49,116 @@
     return code;
 }
 
-bool endWith(const char* s, const char* part) {
+bool endsWith(const char* s, const char* part) {
     const size_t sLength    = strlen(s);
     const size_t partLength = strlen(part);
     return sLength < partLength ? false : strcmp(s + sLength - partLength, part) == 0;
 }
 
-lvk::ShaderStage lvkShaderStageFromFilename(const char* filename) {
-    if (endWith)
+lvk::ShaderStage lvkShaderStageFromFilename(const char* fileName) {
+if (endsWith(fileName, ".vert"))
+    return lvk::Stage_Vert;
+
+  if (endsWith(fileName, ".frag"))
+    return lvk::Stage_Frag;
+
+  if (endsWith(fileName, ".geom"))
+    return lvk::Stage_Geom;
+
+  if (endsWith(fileName, ".comp"))
+    return lvk::Stage_Comp;
+
+  if (endsWith(fileName, ".tesc"))
+    return lvk::Stage_Tesc;
+
+  if (endsWith(fileName, ".tese"))
+    return lvk::Stage_Tese;
+
+  return lvk::Stage_Vert;
 }
 
-lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(const std::unique_ptr<lvk::IContext>& context, const char* filename) {
-    const std::string code = readShaderFile(filename);
+lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(const std::unique_ptr<lvk::IContext>& context, const char* fileName) {
+    const std::string code = readShaderFile(fileName);
+    const lvk::ShaderStage stage = lvkShaderStageFromFilename(fileName);
 
-} */
+    if (code.empty()) {
+        return {};
+    }
+
+    lvk::Result res;
+    lvk::Holder<lvk::ShaderModuleHandle> handle = context->createShaderModule({ 
+            code.c_str(), 
+            stage, 
+            (std::string("Shader Module: ") + fileName).c_str() 
+        }, &res);
+
+    if (!res.isOk()) {
+        return {};
+    }
+
+    debugGLSLSourceCode[handle.index()] = code;
+    return handle;
+}
 
 int main(int argc, char *argv[]) {
     minilog::initialize(nullptr, { .threadNames = false });
     int width = 960, height = 540;
 
     GLFWwindow *window = lvk::initWindow("Simple Example", width, height);
-    std::unique_ptr<lvk::IContext> context = lvk::createVulkanContextWithSwapchain(window, width, height, {});
+    {
+        std::unique_ptr<lvk::IContext> context = lvk::createVulkanContextWithSwapchain(window, width, height, {});
 
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
+        lvk::Holder<lvk::ShaderModuleHandle> vert = loadShaderModule(context, "../../src/main.vert");
+        lvk::Holder<lvk::ShaderModuleHandle> frag = loadShaderModule(context, "../../src/main.frag");
 
-        glfwGetFramebufferSize(window, &width, &height);
-        if (!width || !height) {
-            continue;
+        lvk::Holder<lvk::RenderPipelineHandle> rpTriangle = context->createRenderPipeline({
+            .smVert = vert,
+            .smFrag = frag,
+            .color = {
+                {
+                    .format = context->getSwapchainFormat()
+                }
+            }
+        });
+
+        while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents();
+
+            glfwGetFramebufferSize(window, &width, &height);
+            if (!width || !height) {
+                continue;
+            }
+
+            lvk::ICommandBuffer& commandBuffer = context->acquireCommandBuffer();
+
+            commandBuffer.cmdBeginRendering(
+                {
+                    .color = {
+                        {
+                            .loadOp = lvk::LoadOp_Clear,
+                            .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f }
+                        }
+                    }
+                },
+                {
+                    .color = {
+                        {
+                            .texture = context->getCurrentSwapchainTexture()
+                        }
+                    }
+                }
+            );
+
+            commandBuffer.cmdBindRenderPipeline(rpTriangle);
+            commandBuffer.cmdPushDebugGroupLabel("Render Triangle", 0xff0000ff);
+            commandBuffer.cmdDraw(3);
+            commandBuffer.cmdPopDebugGroupLabel();
+            commandBuffer.cmdEndRendering();
+
+            context->submit(commandBuffer, context->getCurrentSwapchainTexture());
         }
-
-        lvk::ICommandBuffer& commandBuffer = context->acquireCommandBuffer();
-        context->submit(commandBuffer, context->getCurrentSwapchainTexture());
     }
 
-    context.reset();
     glfwDestroyWindow(window);
     glfwTerminate();
 
