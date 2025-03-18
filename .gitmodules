@@ -1,0 +1,3 @@
+[submodule "libraries/lightweightvk"]
+	path = libraries/lightweightvk
+	url = https://github.com/wisnunugroho21/lightweightvk.git
