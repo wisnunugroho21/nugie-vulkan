@@ -63,3 +63,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE LVKLibrary)
 
 add_subdirectory(libraries/glm)
 target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
+
+add_subdirectory(libraries/assimp)
+target_link_libraries(${PROJECT_NAME} PRIVATE assimp)
