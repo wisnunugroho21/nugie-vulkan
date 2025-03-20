@@ -66,3 +66,5 @@ target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
 
 add_subdirectory(libraries/assimp)
 target_link_libraries(${PROJECT_NAME} PRIVATE assimp)
+
+target_include_directories(${PROJECT_NAME} PRIVATE libraries/stb)

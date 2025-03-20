@@ -1,15 +1,20 @@
 #version 460 core
 
 layout(push_constant) uniform PerFrameData {
-    mat4 mvp;
+    uniform mat4 MVP;
+    uint textureid;
 };
 
-layout(constant_id = 0) const bool isWireframe = false;
+layout(location = 0) out vec2 uv;
 
-layout(location = 0) in vec3 pos;
-layout(location = 0) out vec3 color;
+const vec2 pos[4] = vec2[4](
+    vec2( 1.0, -1.0),
+	vec2( 1.0,  1.0),
+	vec2(-1.0, -1.0),
+	vec2(-1.0,  1.0)
+);
 
 void main() {
-    gl_Position = mvp * vec4(pos, 1.0f);
-    color = isWireframe ? vec3(0.0f) : pos.xyz;
+    gl_Position = MVP * vec4(0.5f * pos[gl_VertexIndex], 0.0f, 1.0f);
+    uv = 0.5f * (pos[gl_VertexIndex] + vec2(0.5f));
 }

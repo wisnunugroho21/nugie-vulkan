@@ -4,10 +4,8 @@
 #include <glm/glm.hpp>
 #include <glm/ext.hpp>
 
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
-#include <assimp/cimport.h>
-#include <assimp/version.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #include <unordered_map>
 
@@ -116,75 +114,11 @@ int main(int argc, char *argv[]) {
     GLFWwindow *window = lvk::initWindow("Simple Example", width, height);
     std::unique_ptr<lvk::IContext> context = lvk::createVulkanContextWithSwapchain(window, width, height, {});
 
-    const aiScene* scene = aiImportFile("../../data/rubber_duck/scene.gltf", aiProcess_Triangulate);
-
-    if (!scene || !scene->HasMeshes()) {
-        printf("Unable to load ../../data/rubber_duck/scene.gltf");
-        exit(255);
-    }
-
-    std::vector<glm::vec3> position;
-    std::vector<uint32_t> indices;
-
-    const aiMesh* mesh = scene->mMeshes[0];
-    for (uint32_t i = 0; i < mesh->mNumVertices; i++) {
-        const aiVector3d v = mesh->mVertices[i];
-        position.push_back(glm::vec3(v.x, v.y, v.z));
-    }
-
-    for (uint32_t i = 0; i < mesh->mNumFaces; i++) {
-        for (uint32_t j = 0; j < 3; j++) {
-            indices.push_back(mesh->mFaces[i].mIndices[j]);
-        }
-    }
-
-    aiReleaseImport(scene);
-    
-    lvk::Holder<lvk::BufferHandle> vertexBuffer = context->createBuffer({
-        .usage      = lvk::BufferUsageBits_Vertex,
-        .storage    = lvk::StorageType_Device,
-        .size       = sizeof(glm::vec3) * position.size(),
-        .data       = position.data(),
-        .debugName  = "Vertex Buffer"
-    });
-
-    lvk::Holder<lvk::BufferHandle> indexBuffer = context->createBuffer({
-        .usage      = lvk::BufferUsageBits_Index,
-        .storage    = lvk::StorageType_Device,
-        .size       = sizeof(uint32_t) * indices.size(),
-        .data       = indices.data(),
-        .debugName  = "Index Buffer"
-    });
-
-    lvk::Holder<lvk::TextureHandle> depthTexture = context->createTexture({
-        .type       = lvk::TextureType_2D,
-        .format     = lvk::Format_Z_F32,
-        .dimensions = { 
-            .width  = (uint32_t) width, 
-            .height = (uint32_t) height 
-        },
-        .usage      = lvk::TextureUsageBits_Attachment,
-        .debugName  = "Depth Texture"
-    });
-
     lvk::Holder<lvk::ShaderModuleHandle> vert = loadShaderModule(context, "../../src/main.vert");
     lvk::Holder<lvk::ShaderModuleHandle> frag = loadShaderModule(context, "../../src/main.frag");
 
-    lvk::Holder<lvk::RenderPipelineHandle> pipelineSolid = context->createRenderPipeline({
-        .vertexInput = {
-            .attributes = {
-                {
-                    .location = 0,
-                    .format = lvk::VertexFormat::Float3,
-                    .offset = 0
-                }
-            },
-            .inputBindings = {
-                {
-                    .stride = sizeof(glm::vec3)
-                }
-            } 
-        },
+    lvk::Holder<lvk::RenderPipelineHandle> pipeline = context->createRenderPipeline({
+        .topology = lvk::Topology_TriangleStrip,
         .smVert = vert,
         .smFrag = frag,
         .color = {
@@ -192,52 +126,26 @@ int main(int argc, char *argv[]) {
                 .format = context->getSwapchainFormat()
             }
         },
-        .depthFormat = context->getFormat(depthTexture),
         .cullMode = lvk::CullMode_Back
     });
 
-    const uint32_t isWireframe = 1;
+    LVK_ASSERT(pipeline.valid());
 
-    lvk::Holder<lvk::RenderPipelineHandle> pipelineWireframe = context->createRenderPipeline({
-        .vertexInput = {
-            .attributes = {
-                {
-                    .location = 0,
-                    .format = lvk::VertexFormat::Float3,
-                    .offset = 0
-                }
-            },
-            .inputBindings = {
-                {
-                    .stride = sizeof(glm::vec3)
-                }
-            } 
-        },
-        .smVert = vert,
-        .smFrag = frag,
-        .specInfo = 
-        {
-            .entries = {
-                {
-                    .constantId = 0,
-                    .size = sizeof(uint32_t)
-                }
-            },
-            .data = &isWireframe,
-            .dataSize = sizeof(isWireframe)
-        },
-        .color = {
-            {
-                .format = context->getSwapchainFormat()
-            }
-        },
-        .depthFormat = context->getFormat(depthTexture),
-        .cullMode = lvk::CullMode_Back,
-        .polygonMode = lvk::PolygonMode_Line
+    int w, h, comp;
+    const uint8_t* img = stbi_load("../../data/wood.jpg", &w, &h, &comp, 4);
+
+    assert(img);
+
+    lvk::Holder<lvk::TextureHandle> texture = context->createTexture({
+        .type       = lvk::TextureType_2D,
+        .format     = lvk::Format_RGBA_UN8,
+        .dimensions = { (uint32_t)w, (uint32_t)h },
+        .usage      = lvk::TextureUsageBits_Sampled,
+        .data       = img,
+        .debugName  = "03_STB.jpg"
     });
 
-    LVK_ASSERT(pipelineSolid.valid());
-    LVK_ASSERT(pipelineWireframe.valid());
+    stbi_image_free((void*)img);    
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -250,23 +158,20 @@ int main(int argc, char *argv[]) {
         const float ratio = width / (float) height;
 
         const glm::mat4 m = glm::rotate(
-            glm::mat4(1.0f),
-            glm::radians(-90.0f),
-            glm::vec3(1.0f, 0.0f, 0.0f)
+            glm::mat4(1.0f), 
+            (float)glfwGetTime(), 
+            glm::vec3(0.0f, 0.0f, 1.0f)
         );
 
-        const glm::mat4 v = glm::rotate(
-            glm::translate(
-                glm::mat4(1.0f),
-                glm::vec3(0.0f, -0.5f, -1.5f)
-            ),
-            (float) glfwGetTime(),
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        );
+        const glm::mat4 p = glm::ortho(-ratio, ratio, -1.f, 1.f, 1.f, -1.f);
 
-        const glm::mat4 p = glm::perspective(
-            45.0f, ratio, 0.1f, 1000.0f
-        );
+        const struct PerFrameData {
+            glm::mat4 mvp;
+            uint32_t textureId;
+        } pc = {
+            .mvp        = p * m,
+            .textureId  = texture.index()
+        };
 
         lvk::ICommandBuffer& commandBuffer = context->acquireCommandBuffer();
 
@@ -277,11 +182,6 @@ int main(int argc, char *argv[]) {
                         .loadOp = lvk::LoadOp_Clear,
                         .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f }
                     }
-                },
-                .depth = 
-                {
-                    .loadOp = lvk::LoadOp_Clear,
-                    .clearDepth = 1.0f
                 }
             },
             {
@@ -289,37 +189,16 @@ int main(int argc, char *argv[]) {
                     {
                         .texture = context->getCurrentSwapchainTexture()
                     }
-                },
-                .depthStencil = 
-                {
-                    .texture = depthTexture
                 }
             }
         );
 
-        commandBuffer.cmdPushDebugGroupLabel("Solid Cube", 0xff0000ff);
-        
-        commandBuffer.cmdBindVertexBuffer(0, vertexBuffer);
-        commandBuffer.cmdBindIndexBuffer(indexBuffer, lvk::IndexFormat_UI32);
+        commandBuffer.cmdPushDebugGroupLabel("Quad", 0xff0000ff);
 
         {
-            commandBuffer.cmdBindRenderPipeline(pipelineSolid);
-            commandBuffer.cmdBindDepthState({
-                .compareOp = lvk::CompareOp_Less,
-                .isDepthWriteEnabled = true
-            });
-            commandBuffer.cmdPushConstants(p * v * m);
-            commandBuffer.cmdDrawIndexed(indices.size());
-        }
-
-        commandBuffer.cmdPopDebugGroupLabel();
-        commandBuffer.cmdPushDebugGroupLabel("Wireframe Cube", 0xff0000ff);
-        
-        {
-            commandBuffer.cmdBindRenderPipeline(pipelineWireframe);
-            commandBuffer.cmdSetDepthBiasEnable(true);
-            commandBuffer.cmdSetDepthBias(0.0f, -1.0f, 0.0f);
-            commandBuffer.cmdDrawIndexed(indices.size());
+            commandBuffer.cmdBindRenderPipeline(pipeline);
+            commandBuffer.cmdPushConstants(pc);
+            commandBuffer.cmdDraw(4);
         }
 
         commandBuffer.cmdPopDebugGroupLabel();            
@@ -330,11 +209,8 @@ int main(int argc, char *argv[]) {
 
     vert.reset();
     frag.reset();
-    depthTexture.reset();
-    pipelineSolid.reset();
-    pipelineWireframe.reset();
-    vertexBuffer.reset();
-    indexBuffer.reset();
+    texture.reset();
+    pipeline.reset();
     context.reset();
 
     glfwDestroyWindow(window);
