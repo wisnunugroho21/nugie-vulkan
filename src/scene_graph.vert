@@ -1,6 +1,6 @@
 ﻿//
 
-#include <../../src/common.sp>
+#include <../../src/common_scene_graph.sp>
 
 layout (location=0) in vec3 in_pos;
 layout (location=1) in vec2 in_tc;
@@ -10,7 +10,6 @@ layout (location=0) out vec2 uv;
 layout (location=1) out vec3 normal;
 layout (location=2) out vec3 worldPos;
 layout (location=3) out flat uint materialId;
-layout (location=4) out vec4 shadowCoords;
 
 void main() {
   mat4 model = pc.transforms.model[pc.drawData.dd[gl_BaseInstance].transformId];
@@ -20,6 +19,4 @@ void main() {
   vec4 posClip = model * vec4(in_pos, 1.0);
   worldPos = posClip.xyz/posClip.w;
   materialId = pc.drawData.dd[gl_BaseInstance].materialId;
-
-  shadowCoords = pc.light.viewProjBias * posClip;
 }

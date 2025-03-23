@@ -27,6 +27,7 @@ macro(SETUP_APP projname chapter)
 	set(FOLDER_NAME ${chapter})
 	set(PROJECT_NAME ${projname})
 	project(${PROJECT_NAME} CXX)
+	project(${PROJECT_NAME} C)
 
 	file(GLOB_RECURSE SRC_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/*.c??)
 	file(GLOB_RECURSE HEADER_FILES LIST_DIRECTORIES false RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} src/*.h)
@@ -62,9 +63,19 @@ add_subdirectory(libraries/lightweightvk)
 target_link_libraries(${PROJECT_NAME} PRIVATE LVKLibrary)
 
 add_subdirectory(libraries/glm)
-target_link_libraries(${PROJECT_NAME} PRIVATE glm::glm)
+target_link_libraries(${PROJECT_NAME} PRIVATE glm)
 
 add_subdirectory(libraries/assimp)
 target_link_libraries(${PROJECT_NAME} PRIVATE assimp)
 
 target_include_directories(${PROJECT_NAME} PRIVATE libraries/stb)
+
+add_subdirectory(libraries/ktx-software)
+target_link_libraries(${PROJECT_NAME} PRIVATE ktx)
+target_include_directories(${PROJECT_NAME} PRIVATE libraries/ktx-software/lib)
+
+add_subdirectory(libraries/meshoptimizer)
+target_link_libraries(${PROJECT_NAME} PRIVATE meshoptimizer)
+
+add_subdirectory(libraries/taskflow)
+target_link_libraries(${PROJECT_NAME} PRIVATE Taskflow)

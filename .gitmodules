@@ -10,3 +10,12 @@
 [submodule "libraries/stb"]
 	path = libraries/stb
 	url = https://github.com/nothings/stb.git
+[submodule "libraries/ktx-software"]
+	path = libraries/ktx-software
+	url = https://github.com/KhronosGroup/KTX-Software.git
+[submodule "libraries/meshoptimizer"]
+	path = libraries/meshoptimizer
+	url = https://github.com/zeux/meshoptimizer.git
+[submodule "libraries/taskflow"]
+	path = libraries/taskflow
+	url = https://github.com/taskflow/taskflow.git
