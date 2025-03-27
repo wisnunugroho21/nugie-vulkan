@@ -1,4 +1,6 @@
 #include <lvk/LVK.h>
+#include <lvk/HelpersImGui.h>
+
 #include <GLFW/glfw3.h>
 
 #define GLM_ENABLE_EXPERIMENTAL
@@ -19,271 +21,308 @@
 #include <assimp/cimport.h>
 
 #include "shared/Bitmap.h"
+#include "shared/Camera.h"
 #include "shared/Utils.h"
 #include "shared/UtilsCubemap.h"
 
-struct VertexData {
-    glm::vec3 pos;
-    glm::vec3 n;
-    glm::vec2 tc;
-};
+using glm::mat4;
+using glm::vec2;
+using glm::vec3;
+using glm::vec4;
 
-struct PerFrameData {
-    glm::mat4 model;
-	glm::mat4 view;
-	glm::mat4 proj;
-	glm::vec4 cameraPos;
-	uint32_t tex        = 0;
-	uint32_t texCube    = 0;
-};
+struct MouseState {
+	glm::vec2 pos = glm::vec2(0.0f);
+	bool pressedLeft = false;
+} mouseState;
 
-int main(int argc, char *argv[]) {
-    minilog::initialize(nullptr, { .threadNames = false });
-    int width = 960, height = 540;
+const vec3 kInitialCameraPos    = vec3(0.0f, 1.0f, -1.5f);
+const vec3 kInitialCameraTarget = vec3(0.0f, 0.5f, 0.0f);
 
-    GLFWwindow *window                      = lvk::initWindow("Simple Example", width, height);
-    std::unique_ptr<lvk::IContext> context  = lvk::createVulkanContextWithSwapchain(window, width, height, {});
+CameraPositioner_FirstPerson positioner(kInitialCameraPos, kInitialCameraTarget, vec3(0.0f, 1.0f, 0.0f));
+Camera camera(positioner);
+
+int main(void)
+{
+  minilog::initialize(nullptr, { .threadNames = false });
+
+  GLFWwindow* window = nullptr;
+  SCOPE_EXIT
+  {
+    glfwDestroyWindow(window);
+    glfwTerminate();
+  };
+
+  {
+    std::unique_ptr<lvk::IContext> ctx;
+    lvk::Holder<lvk::TextureHandle> depthTexture;
+    {
+      int width  = -95;
+      int height = -90;
+
+      window = lvk::initWindow("Simple example", width, height);
+      ctx    = lvk::createVulkanContextWithSwapchain(window, width, height, {});
+
+      depthTexture = ctx->createTexture({
+          .type       = lvk::TextureType_2D,
+          .format     = lvk::Format_Z_F32,
+          .dimensions = {(uint32_t)width, (uint32_t)height},
+          .usage      = lvk::TextureUsageBits_Attachment,
+          .debugName  = "Depth buffer",
+      });
+    }
+
+    struct VertexData {
+      vec3 pos;
+      vec3 n;
+      vec2 tc;
+    };
+
+    lvk::Holder<lvk::ShaderModuleHandle> vert       = loadShaderModule(ctx, "../../src/shaders/main.vert");
+    lvk::Holder<lvk::ShaderModuleHandle> frag       = loadShaderModule(ctx, "../../src/shaders/main.frag");
+    lvk::Holder<lvk::ShaderModuleHandle> vertSkybox = loadShaderModule(ctx, "../../src/shaders/cubemap/skybox.vert");
+    lvk::Holder<lvk::ShaderModuleHandle> fragSkybox = loadShaderModule(ctx, "../../src/shaders/cubemap/skybox.frag");
+
+    const lvk::VertexInput vdesc = {
+      .attributes    = {{ .location = 0, .format = lvk::VertexFormat::Float3, .offset = offsetof(VertexData, pos) },
+                        { .location = 1, .format = lvk::VertexFormat::Float3, .offset = offsetof(VertexData, n) },
+                        { .location = 2, .format = lvk::VertexFormat::Float2, .offset = offsetof(VertexData, tc) }, },
+      .inputBindings = { { .stride = sizeof(VertexData) } },
+    };
+
+    lvk::Holder<lvk::RenderPipelineHandle> pipeline = ctx->createRenderPipeline({
+        .vertexInput = vdesc,
+        .smVert      = vert,
+        .smFrag      = frag,
+        .color       = { { .format = ctx->getSwapchainFormat() } },
+        .depthFormat = ctx->getFormat(depthTexture),
+        .cullMode    = lvk::CullMode_Back,
+    });
+
+    lvk::Holder<lvk::RenderPipelineHandle> pipelineSkybox = ctx->createRenderPipeline({
+        .smVert      = vertSkybox,
+        .smFrag      = fragSkybox,
+        .color       = { { .format = ctx->getSwapchainFormat() } },
+        .depthFormat = ctx->getFormat(depthTexture),
+    });
 
     const aiScene* scene = aiImportFile("../../data/rubber_duck/scene.gltf", aiProcess_Triangulate);
 
     if (!scene || !scene->HasMeshes()) {
-        printf("Unable to load ../../data/rubber_duck/scene.gltf");
-        exit(255);
+      printf("Unable to load ../../data/rubber_duck/scene.gltf\n");
+      exit(255);
     }
-
-    std::vector<VertexData> vertices;
-    std::vector<uint32_t> indices;
 
     const aiMesh* mesh = scene->mMeshes[0];
-    for (uint32_t i = 0; i < mesh->mNumVertices; i++) {
-        const aiVector3D v = mesh->mVertices[i];
-        const aiVector3D n = mesh->mNormals[i];
-        const aiVector3D t = mesh->mTextureCoords[0][i];
-        vertices.push_back({ .pos = glm::vec3(v.x, v.y, v.z), .n = glm::vec3(n.x, n.y, n.z), .tc = glm::vec2(t.x, t.y) });
+    std::vector<VertexData> vertices;
+    for (uint32_t i = 0; i != mesh->mNumVertices; i++) {
+      const aiVector3D v = mesh->mVertices[i];
+      const aiVector3D n = mesh->mNormals[i];
+      const aiVector3D t = mesh->mTextureCoords[0][i];
+      vertices.push_back({ .pos = vec3(v.x, v.y, v.z), .n = vec3(n.x, n.y, n.z), .tc = vec2(t.x, t.y) });
     }
-
-    for (uint32_t i = 0; i < mesh->mNumFaces; i++) {
-        for (uint32_t j = 0; j < 3; j++) {
-            indices.push_back(mesh->mFaces[i].mIndices[j]);
-        }
+    std::vector<uint32_t> indices;
+    for (uint32_t i = 0; i != mesh->mNumFaces; i++) {
+      for (uint32_t j = 0; j != 3; j++)
+        indices.push_back(mesh->mFaces[i].mIndices[j]);
     }
-
     aiReleaseImport(scene);
 
-    lvk::Holder<lvk::BufferHandle> vertexBuffer = context->createBuffer({
-        .usage      = lvk::BufferUsageBits_Vertex,
-        .storage    = lvk::StorageType_Device,
-        .size       = sizeof(VertexData) * vertices.size(),
-        .data       = vertices.data(),
-        .debugName  = "Vertex Buffer"
-    });
+    const size_t kSizeIndices  = sizeof(uint32_t) * indices.size();
+    const size_t kSizeVertices = sizeof(VertexData) * vertices.size();
 
-    lvk::Holder<lvk::BufferHandle> indexBuffer = context->createBuffer({
-        .usage      = lvk::BufferUsageBits_Index,
-        .storage    = lvk::StorageType_Device,
-        .size       = sizeof(uint32_t) * indices.size(),
-        .data       = indices.data(),
-        .debugName  = "Index Buffer"
-    });
+    // indices
+    lvk::Holder<lvk::BufferHandle> bufferIndices = ctx->createBuffer(
+        { .usage     = lvk::BufferUsageBits_Index,
+          .storage   = lvk::StorageType_Device,
+          .size      = kSizeIndices,
+          .data      = indices.data(),
+          .debugName = "Buffer: indices" },
+        nullptr);
 
-    lvk::Holder<lvk::BufferHandle> perFrameBuffer = context->createBuffer({
-        .usage      = lvk::BufferUsageBits_Uniform,
-        .storage    = lvk::StorageType_Device,
-        .size       = sizeof(PerFrameData),
-        .debugName  = "Per Frame Buffer"
-    });
-    
-    lvk::Holder<lvk::TextureHandle> depthTexture = context->createTexture({
-        .type       = lvk::TextureType_2D,
-        .format     = lvk::Format_Z_F32,
-        .dimensions = {(uint32_t)width, (uint32_t)height},
-        .usage      = lvk::TextureUsageBits_Attachment,
-        .debugName  = "Depth Buffer"
-    });
+    // vertices
+    lvk::Holder<lvk::BufferHandle> bufferVertices = ctx->createBuffer(
+        { .usage     = lvk::BufferUsageBits_Vertex,
+          .storage   = lvk::StorageType_Device,
+          .size      = kSizeVertices,
+          .data      = vertices.data(),
+          .debugName = "Buffer: vertices" },
+        nullptr);
 
-    lvk::Holder<lvk::TextureHandle> texture = loadTexture(context, "../../data/rubber_duck/textures/Duck_baseColor.png");
+    struct PerFrameData {
+      mat4 model;
+      mat4 view;
+      mat4 proj;
+      vec4 cameraPos;
+      uint32_t tex     = 0;
+      uint32_t texCube = 0;
+    };
 
-    int w, h, comp;
-    const float* img = stbi_loadf("../../data/piazza_bologni_1k.hdr", &w, &h, &comp, 4);
-    assert(img);
+    lvk::Holder<lvk::BufferHandle> bufferPerFrame = ctx->createBuffer(
+        { .usage     = lvk::BufferUsageBits_Uniform,
+          .storage   = lvk::StorageType_Device,
+          .size      = sizeof(PerFrameData),
+          .debugName = "Buffer: per-frame" },
+        nullptr);
 
-    Bitmap in(w, h, 4, eBitmapFormat_Float, img);
-    Bitmap out = convertEquirectangularMapToVerticalCross(in);
-    stbi_image_free((void*)img);
-    
-    stbi_write_hdr(".cace/screenshot.hdr", out.w_, out.h_, out.comp_, (const float*)out.data_.data());
+    // texture
+    lvk::Holder<lvk::TextureHandle> texture = loadTexture(ctx, "../../data/rubber_duck/textures/Duck_baseColor.png");
 
-    Bitmap cubemap = convertVerticalCrossToCubeMapFaces(out);
-    
-    lvk::Holder<lvk::TextureHandle> cubemapTexture = context->createTexture({
-        .type       = lvk::TextureType_Cube,
-        .format     = lvk::Format_RGBA_F32,
-        .dimensions = { (uint32_t)cubemap.w_, (uint32_t)cubemap.h_ },
-        .usage      = lvk::TextureUsageBits_Sampled,
-        .data       = cubemap.data_.data(),
-        .debugName  = "piazza_bologni_1k.hdr"
-    });
-    
-    lvk::Holder<lvk::ShaderModuleHandle> vert       = loadShaderModule(context, "../../src/shaders/main.vert");
-    lvk::Holder<lvk::ShaderModuleHandle> frag       = loadShaderModule(context, "../../src/shaders/main.frag");
-    lvk::Holder<lvk::ShaderModuleHandle> vertSkybox = loadShaderModule(context, "../../src/shaders/cubemap/skybox.vert");
-    lvk::Holder<lvk::ShaderModuleHandle> fragSkybox = loadShaderModule(context, "../../src/shaders/cubemap/skybox.frag");
+    // cube map
+    lvk::Holder<lvk::TextureHandle> cubemapTex;
+    {
+      int w, h;
+      const float* img = stbi_loadf("../../data/piazza_bologni_1k.hdr", &w, &h, nullptr, 4);
+      Bitmap in(w, h, 4, eBitmapFormat_Float, img);
+      Bitmap out = convertEquirectangularMapToVerticalCross(in);
+      stbi_image_free((void*)img);
 
-    lvk::Holder<lvk::RenderPipelineHandle> pipeline = context->createRenderPipeline({
-        .topology = lvk::Topology_TriangleStrip,
-        .vertexInput = 
-        {
-            .attributes = {
-                {
-                    .location   = 0,
-                    .format     = lvk::VertexFormat::Float3,
-                    .offset     = offsetof(VertexData, pos)
-                },
-                {
-                    .location   = 1,
-                    .format     = lvk::VertexFormat::Float3,
-                    .offset     = offsetof(VertexData, n)
-                },
-                {
-                    .location   = 2,
-                    .format     = lvk::VertexFormat::Float2,
-                    .offset     = offsetof(VertexData, tc)
-                }
-            },
-            .inputBindings = {
-                {
-                    .stride = sizeof(VertexData)
-                }
-            }
-        },        
-        .smVert = vert,
-        .smFrag = frag,
-        .color = {
-            {
-                .format = context->getSwapchainFormat()
-            }
-        },
-        .depthFormat = context->getFormat(depthTexture),
-        .cullMode = lvk::CullMode_Back
-    });
+      stbi_write_hdr(".cache/screenshot.hdr", out.w_, out.h_, out.comp_, (const float*)out.data_.data());
 
-    LVK_ASSERT(pipeline.valid());
+      Bitmap cubemap = convertVerticalCrossToCubeMapFaces(out);
 
-    lvk::Holder<lvk::RenderPipelineHandle> pipelineSkybox = context->createRenderPipeline({        
-        .smVert = vertSkybox,
-        .smFrag = fragSkybox,
-        .color = {
-            {
-                .format = context->getSwapchainFormat()
-            }
-        },
-        .depthFormat = context->getFormat(depthTexture)
-    });
-
-    LVK_ASSERT(pipelineSkybox.valid());
-
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
-
-        glfwGetFramebufferSize(window, &width, &height);
-        if (!width || !height) {
-            continue;
-        }
-
-        const float ratio = width / (float) height;
-
-        const glm::vec3 cameraPos(0.0f, 1.0f, -1.5f);
-
-        const glm::mat4 p  = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 1000.0f);
-        const glm::mat4 m1 = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1, 0, 0));
-        const glm::mat4 m2 = glm::rotate(glm::mat4(1.0f), (float)glfwGetTime(), glm::vec3(0.0f, 1.0f, 0.0f));
-        const glm::mat4 v  = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.5f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-        const PerFrameData pc = {
-            .model     = m2 * m1,
-            .view      = v,
-            .proj      = p,
-            .cameraPos = glm::vec4(cameraPos, 1.0f),
-            .tex       = texture.index(),
-            .texCube   = cubemapTexture.index(),
-        };
-
-        context->upload(perFrameBuffer, &pc, sizeof(pc));
-
-        lvk::ICommandBuffer& commandBuffer = context->acquireCommandBuffer();
-
-        commandBuffer.cmdBeginRendering(
-            {
-                .color = {
-                    {
-                        .loadOp = lvk::LoadOp_Clear,
-                        .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f }
-                    }
-                },
-                .depth = {
-                    .loadOp = lvk::LoadOp_Clear,
-                    .clearDepth = 1.0f
-                }
-            },
-            {
-                .color = {
-                    {
-                        .texture = context->getCurrentSwapchainTexture()
-                    }
-                },
-                .depthStencil = {
-                    .texture = depthTexture
-                }
-            }
-        );
-
-        commandBuffer.cmdPushDebugGroupLabel("SkyBox", 0xff0000ff);
-
-        {
-            commandBuffer.cmdBindRenderPipeline(pipelineSkybox);
-            commandBuffer.cmdPushConstants(context->gpuAddress(perFrameBuffer));
-            commandBuffer.cmdDraw(36);
-        }
-
-        commandBuffer.cmdPopDebugGroupLabel();        
-        commandBuffer.cmdPushDebugGroupLabel("Mesh", 0xff0000ff);
-
-        {
-            commandBuffer.cmdBindVertexBuffer(0, vertexBuffer);
-            commandBuffer.cmdBindIndexBuffer(indexBuffer, lvk::IndexFormat_UI32);
-            commandBuffer.cmdBindRenderPipeline(pipeline);
-            commandBuffer.cmdBindDepthState({
-                .compareOp = lvk::CompareOp_Less,
-                .isDepthWriteEnabled = true
-            });
-            commandBuffer.cmdDrawIndexed((uint32_t)indices.size());
-        }
-
-        commandBuffer.cmdPopDebugGroupLabel();
-        commandBuffer.cmdEndRendering();
-
-        context->submit(commandBuffer, context->getCurrentSwapchainTexture());
+      cubemapTex = ctx->createTexture({
+          .type       = lvk::TextureType_Cube,
+          .format     = lvk::Format_RGBA_F32,
+          .dimensions = {(uint32_t)cubemap.w_, (uint32_t)cubemap.h_},
+          .usage      = lvk::TextureUsageBits_Sampled,
+          .data       = cubemap.data_.data(),
+          .debugName  = "../../data/piazza_bologni_1k.hdr",
+      });
     }
 
-    vertexBuffer.reset();
-    indexBuffer.reset();
-    perFrameBuffer.reset();
+    glfwSetCursorPosCallback(window, [](auto* window, double x, double y) {
+      int width, height;
+      glfwGetFramebufferSize(window, &width, &height);
+      mouseState.pos.x = static_cast<float>(x / width);
+      mouseState.pos.y = 1.0f - static_cast<float>(y / height);
+    });
 
-    vert.reset();
-    frag.reset();
-    vertSkybox.reset();
-    fragSkybox.reset();
+    glfwSetMouseButtonCallback(window, [](auto* window, int button, int action, int mods) {
+      if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        mouseState.pressedLeft = action == GLFW_PRESS;
+      }
+      double xpos, ypos;
+      glfwGetCursorPos(window, &xpos, &ypos);
+      const ImGuiMouseButton_ imguiButton = (button == GLFW_MOUSE_BUTTON_LEFT)
+                                                ? ImGuiMouseButton_Left
+                                                : (button == GLFW_MOUSE_BUTTON_RIGHT ? ImGuiMouseButton_Right : ImGuiMouseButton_Middle);
 
-    texture.reset();
-    depthTexture.reset();
-    cubemapTexture.reset();
+      ImGuiIO& io               = ImGui::GetIO();
+      io.MousePos               = ImVec2((float)xpos, (float)ypos);
+      io.MouseDown[imguiButton] = action == GLFW_PRESS;
+    });
 
-    pipeline.reset();
-    pipelineSkybox.reset();
-    context.reset();
+    glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int scancode, int action, int mods) {
+      const bool pressed = action != GLFW_RELEASE;
+      if (key == GLFW_KEY_ESCAPE && pressed)
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+      if (key == GLFW_KEY_W)
+        positioner.movement_.forward_ = pressed;
+      if (key == GLFW_KEY_S)
+        positioner.movement_.backward_ = pressed;
+      if (key == GLFW_KEY_A)
+        positioner.movement_.left_ = pressed;
+      if (key == GLFW_KEY_D)
+        positioner.movement_.right_ = pressed;
+      if (key == GLFW_KEY_1)
+        positioner.movement_.up_ = pressed;
+      if (key == GLFW_KEY_2)
+        positioner.movement_.down_ = pressed;
+      if (mods & GLFW_MOD_SHIFT)
+        positioner.movement_.fastSpeed_ = pressed;
+      if (key == GLFW_KEY_SPACE) {
+        positioner.lookAt(kInitialCameraPos, kInitialCameraTarget, vec3(0.0f, 1.0f, 0.0f));
+        positioner.setSpeed(vec3(0));
+      }
+    });
 
-    glfwDestroyWindow(window);
-    glfwTerminate();
+    std::unique_ptr<lvk::ImGuiRenderer> imgui = std::make_unique<lvk::ImGuiRenderer>(*ctx, "../../data/OpenSans-Light.ttf", 30.0f);
 
-    return 0;
+    double timeStamp   = glfwGetTime();
+    float deltaSeconds = 0.0f;
+
+    while (!glfwWindowShouldClose(window)) {
+      glfwPollEvents();
+      int width, height;
+      glfwGetFramebufferSize(window, &width, &height);
+      if (!width || !height)
+        continue;
+      const float ratio = width / (float)height;
+
+      positioner.update(deltaSeconds, mouseState.pos, mouseState.pressedLeft);
+
+      const double newTimeStamp = glfwGetTime();
+      deltaSeconds              = static_cast<float>(newTimeStamp - timeStamp);
+      timeStamp                 = newTimeStamp;
+
+      const vec4 cameraPos = vec4(camera.getPosition(), 1.0f);
+
+      const mat4 p  = glm::perspective(glm::radians(60.0f), ratio, 0.1f, 1000.0f);
+      const mat4 m1 = glm::rotate(mat4(1.0f), glm::radians(-90.0f), vec3(1, 0, 0));
+      const mat4 m2 = glm::rotate(mat4(1.0f), (float)glfwGetTime(), vec3(0.0f, 1.0f, 0.0f));
+      const mat4 v  = glm::translate(mat4(1.0f), vec3(cameraPos));
+
+      const PerFrameData pc = {
+        .model     = m2 * m1,
+        .view      = camera.getViewMatrix(),
+        .proj      = p,
+        .cameraPos = cameraPos,
+        .tex       = texture.index(),
+        .texCube   = cubemapTex.index(),
+      };
+
+      ctx->upload(bufferPerFrame, &pc, sizeof(pc));
+
+      const lvk::RenderPass renderPass = {
+        .color = { { .loadOp = lvk::LoadOp_Clear, .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f } } },
+        .depth = { .loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f }
+      };
+
+      const lvk::Framebuffer framebuffer = {
+        .color        = { { .texture = ctx->getCurrentSwapchainTexture() } },
+        .depthStencil = { .texture = depthTexture },
+      };
+
+      lvk::ICommandBuffer& buf = ctx->acquireCommandBuffer();
+      {
+        buf.cmdBeginRendering(renderPass, framebuffer);
+        {
+          {
+            buf.cmdPushDebugGroupLabel("Skybox", 0xff0000ff);
+            buf.cmdBindRenderPipeline(pipelineSkybox);
+            buf.cmdPushConstants(ctx->gpuAddress(bufferPerFrame));
+            buf.cmdDraw(36);
+            buf.cmdPopDebugGroupLabel();
+          }
+          {
+            buf.cmdPushDebugGroupLabel("Mesh", 0xff0000ff);
+            buf.cmdBindVertexBuffer(0, bufferVertices);
+            buf.cmdBindRenderPipeline(pipeline);
+            buf.cmdBindDepthState({ .compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = true });
+            buf.cmdBindIndexBuffer(bufferIndices, lvk::IndexFormat_UI32);
+            buf.cmdDrawIndexed((uint32_t) indices.size());
+            buf.cmdPopDebugGroupLabel();
+          }
+
+          imgui->beginFrame(framebuffer);
+          ImGui::SetNextWindowPos(ImVec2(10, 10));
+          ImGui::Begin(
+              "Keyboard hints:", nullptr,
+              ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoInputs |
+                  ImGuiWindowFlags_NoCollapse);
+          ImGui::Text("W/S/A/D - camera movement");
+          ImGui::Text("1/2 - camera up/down");
+          ImGui::Text("Shift - fast movement");
+          ImGui::Text("Space - reset view");
+          ImGui::End();
+          imgui->endFrame(buf);
+
+          buf.cmdEndRendering();
+        }
+      }
+      ctx->submit(buf, ctx->getCurrentSwapchainTexture());
+    }
+  }
+
+  return 0;
 }
