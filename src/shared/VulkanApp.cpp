@@ -37,7 +37,7 @@ VulkanApp::VulkanApp(const VulkanAppConfig& cfg)
       .debugName  = "Depth buffer",
   });
 
-  imgui_     = std::make_unique<lvk::ImGuiRenderer>(*ctx_, "data/OpenSans-Light.ttf", 30.0f);
+  imgui_     = std::make_unique<lvk::ImGuiRenderer>(*ctx_, "../../data/OpenSans-Light.ttf", 30.0f);
   implotCtx_ = ImPlot::CreateContext();
 
   glfwSetWindowUserPointer(window_, this);
