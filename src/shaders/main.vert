@@ -1,20 +1,21 @@
 //
+#version 460
 
-#include <../../src/shaders/cubemap/common.sp>
+#include "../../src/shaders/common.sp"
 
-layout(location = 0) in vec3 pos;
-layout(location = 1) in vec3 normal;
-layout(location = 2) in vec2 uv;
+layout (location = 0) out vec2 uv;
 
-layout(location=0) out PerVertex vtx;
+const vec2 pos[4] = vec2[4](
+  vec2( 0.5, -0.5),
+  vec2( 0.5,  0.5),
+  vec2(-0.5, -0.5),
+  vec2(-0.5,  0.5)
+);
 
 void main() {
-	gl_Position = pc.proj * pc.view * pc.model * vec4(pos, 1.0);
+  uv = pos[gl_VertexIndex] + vec2(0.5);
 
-	mat4 model = pc.model;
-	mat3 normalMatrix = transpose( inverse(mat3(pc.model)) );
+  vec2 p = pos[gl_VertexIndex] * vec2(pc.width, pc.height) + vec2(pc.x, pc.y);
 
-	vtx.uv = uv;
-	vtx.worldNormal = normalMatrix * normal;
-	vtx.worldPos = (model * vec4(pos, 1.0)).xyz;
+  gl_Position = pc.proj * vec4(p, 0.0, 1.0);
 }

@@ -698,9 +698,9 @@ void loadGLTF(GLTFContext& gltf, const char* glTFName, const char* glTFDataPath)
     .inputBindings = { { .stride = sizeof(Vertex) } },
   };
 
-  gltf.vert      = loadShaderModule(ctx, "data/shaders/gltf/main.vert");
-  gltf.frag      = loadShaderModule(ctx, "data/shaders/gltf/main.frag");
-  gltf.animation = loadShaderModule(ctx, "data/shaders/gltf/animation.comp");
+  gltf.vert      = loadShaderModule(ctx, "../../src/shaders/gltf/main.vert");
+  gltf.frag      = loadShaderModule(ctx, "../../src/shaders/gltf/main.frag");
+  gltf.animation = loadShaderModule(ctx, "../../src/shaders/gltf/animation.comp");
 
   gltf.pipelineSolid = ctx->createRenderPipeline({
       .vertexInput = vdesc,

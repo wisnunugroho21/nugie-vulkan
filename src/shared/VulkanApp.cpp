@@ -373,8 +373,8 @@ void VulkanApp::drawGrid(
     lvk::ICommandBuffer& buf, const mat4& mvp, const vec3& origin, const vec3& camPos, uint32_t numSamples, lvk::Format colorFormat)
 {
   if (gridPipeline.empty() || pipelineSamples != numSamples) {
-    gridVert = loadShaderModule(ctx_, "data/shaders/Grid.vert");
-    gridFrag = loadShaderModule(ctx_, "data/shaders/Grid.frag");
+    gridVert = loadShaderModule(ctx_, "../../src/shaders/grid/Grid.vert");
+    gridFrag = loadShaderModule(ctx_, "../../src/shaders/grid/Grid.frag");
 
     pipelineSamples = numSamples;
 

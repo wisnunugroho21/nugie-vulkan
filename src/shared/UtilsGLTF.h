@@ -208,8 +208,8 @@ struct GLTFMaterialTextures {
 struct EnvironmentMapTextures {
   explicit EnvironmentMapTextures(const std::unique_ptr<lvk::IContext>& ctx)
   : EnvironmentMapTextures(
-        ctx, "data/brdfLUT.ktx", "data/piazza_bologni_1k_prefilter.ktx", "data/piazza_bologni_1k_irradiance.ktx",
-        "data/piazza_bologni_1k_charlie.ktx")
+        ctx, "../../data/brdfLUT.ktx", "../../data/piazza_bologni_1k_prefilter.ktx", "../../data/piazza_bologni_1k_irradiance.ktx",
+        "../../data/piazza_bologni_1k_charlie.ktx")
   {
   }
 
