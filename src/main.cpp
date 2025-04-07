@@ -19,18 +19,17 @@
 
 #include "shared/LineCanvas.h"
 
-enum CullingMode {
-  CullingMode_None = 0,
-  CullingMode_CPU  = 1,
-  CullingMode_GPU  = 2,
-};
+bool drawMeshes    = true;
+bool drawBoxes     = false;
+bool drawWireframe = false;
+struct LightParams {
+  float theta          = +90.0f;
+  float phi            = -26.0f;
+  float depthBiasConst = 1.1f;
+  float depthBiasSlope = 2.0f;
 
-mat4 cullingView       = mat4(1.0f);
-int cullingMode        = CullingMode_GPU;
-bool freezeCullingView = false;
-bool drawMeshes        = true;
-bool drawBoxes         = true;
-bool drawWireframe     = false;
+  bool operator==(const LightParams&) const = default;
+} light;
 
 int main()
 {
@@ -70,141 +69,111 @@ int main()
       .debugName  = "msaaDepth",
   });
 
-  lvk::Holder<lvk::ShaderModuleHandle> compCulling        = loadShaderModule(ctx, "../../src/shaders/culling/FrustumCulling.comp");
-  lvk::Holder<lvk::ComputePipelineHandle> pipelineCulling = ctx->createComputePipeline({
-      .smComp = compCulling,
+  lvk::Holder<lvk::TextureHandle> shadowMap = ctx->createTexture({
+      .type       = lvk::TextureType_2D,
+      .format     = lvk::Format_Z_UN16,
+      .dimensions = { 4096, 4096 },
+      .usage      = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
+      .swizzle    = { .r = lvk::Swizzle_R, .g = lvk::Swizzle_R, .b = lvk::Swizzle_R, .a = lvk::Swizzle_1 },
+      .debugName  = "Shadow map",
   });
 
-  app.addKeyCallback([](GLFWwindow* window, int key, int scancode, int action, int mods) {
-    const bool pressed = action != GLFW_RELEASE;
-    if (!pressed || ImGui::GetIO().WantCaptureKeyboard)
-      return;
-    if (key == GLFW_KEY_P)
-      freezeCullingView = !freezeCullingView;
-    if (key == GLFW_KEY_N)
-      cullingMode = CullingMode_None;
-    if (key == GLFW_KEY_C)
-      cullingMode = CullingMode_CPU;
-    if (key == GLFW_KEY_G)
-      cullingMode = CullingMode_GPU;
+  lvk::Holder<lvk::SamplerHandle> samplerShadow = ctx->createSampler({
+      .wrapU               = lvk::SamplerWrap_Clamp,
+      .wrapV               = lvk::SamplerWrap_Clamp,
+      .depthCompareOp      = lvk::CompareOp_LessEqual,
+      .depthCompareEnabled = true,
+      .debugName           = "Sampler: shadow",
+  });
+
+  struct LightData {
+    mat4 viewProjBias;
+    vec4 lightDir;
+    uint32_t shadowTexture;
+    uint32_t shadowSampler;
+  };
+  lvk::Holder<lvk::BufferHandle> bufferLight = ctx->createBuffer({
+      .usage     = lvk::BufferUsageBits_Storage,
+      .storage   = lvk::StorageType_Device,
+      .size      = sizeof(LightData),
+      .debugName = "Buffer: light",
   });
 
   const Skybox skyBox(
       ctx, "../../data/immenstadter_horn_2k_prefilter.ktx", "../../data/immenstadter_horn_2k_irradiance.ktx", ctx->getSwapchainFormat(),
       app.getDepthFormat(), kNumSamples);
 
-  const VKMesh11 mesh(ctx, meshData, scene, lvk::StorageType_HostVisible);
-  const VKPipeline11 pipeline(ctx, meshData.streams, ctx->getSwapchainFormat(), app.getDepthFormat(), kNumSamples);
-
-  std::vector<BoundingBox> reorderedBoxes;
-  reorderedBoxes.resize(scene.globalTransform.size());
+  const VKMesh11 mesh(ctx, meshData, scene);
+  const VKPipeline11 pipelineMesh(
+      ctx, meshData.streams, ctx->getSwapchainFormat(), app.getDepthFormat(), kNumSamples,
+      loadShaderModule(ctx, "../../src/shaders/main.vert"),
+      loadShaderModule(ctx, "../../src/shaders/main.frag"));
+  const VKPipeline11 pipelineShadow(
+      ctx, meshData.streams, lvk::Format_Invalid, ctx->getFormat(shadowMap), 1,
+      loadShaderModule(ctx, "../../src/shaders/directional_shadow/shadow.vert"),
+      loadShaderModule(ctx, "../../src/shaders/directional_shadow/shadow.frag"));
 
   // pretransform bounding boxes to world space
+  std::vector<BoundingBox> reorderedBoxes;
+  reorderedBoxes.resize(scene.globalTransform.size());
   for (auto& p : scene.meshForNode) {
     reorderedBoxes[p.first] = meshData.boxes[p.second].getTransformed(scene.globalTransform[p.first]);
   }
 
-  lvk::Holder<lvk::BufferHandle> bufferAABBs = ctx->createBuffer({
-      .usage     = lvk::BufferUsageBits_Storage,
-      .storage   = lvk::StorageType_Device,
-      .size      = reorderedBoxes.size() * sizeof(BoundingBox),
-      .data      = reorderedBoxes.data(),
-      .debugName = "Buffer: AABBs",
-  });
+  // create the scene AABB in world space
+  BoundingBox bigBoxWS = reorderedBoxes.front();
+  for (const auto& b : reorderedBoxes) {
+    bigBoxWS.combinePoint(b.min_);
+    bigBoxWS.combinePoint(b.max_);
+  }
 
-  struct CullingData {
-    vec4 frustumPlanes[6];
-    vec4 frustumCorners[8];
-    uint32_t numMeshesToCull  = 0;
-    uint32_t numVisibleMeshes = 0; // GPU
-  } emptyCullingData;
+  // update shadow map
+  LightParams prevLight = { .depthBiasConst = 0 };
 
-  int numVisibleMeshes = 0; // CPU
-
-  // round-robin
-  const lvk::BufferDesc cullingDataDesc = {
-    .usage     = lvk::BufferUsageBits_Storage,
-    .storage   = lvk::StorageType_HostVisible,
-    .size      = sizeof(CullingData),
-    .data      = &emptyCullingData,
-    .debugName = "Buffer: CullingData 0",
-  };
-  lvk::Holder<lvk::BufferHandle> bufferCullingData[] = {
-    ctx->createBuffer(cullingDataDesc, "Buffer: CullingData 0"),
-    ctx->createBuffer(cullingDataDesc, "Buffer: CullingData 1"),
-  };
-  lvk::SubmitHandle submitHandle[LVK_ARRAY_NUM_ELEMENTS(bufferCullingData)] = {};
-  uint32_t currentBufferId = 0;
-
-  struct {
-    uint64_t commands;
-    uint64_t drawData;
-    uint64_t AABBs;
-    uint64_t meshes;
-  } pcCulling = {
-    .commands = ctx->gpuAddress(mesh.indirectBuffer_.bufferIndirect_),
-    .drawData = ctx->gpuAddress(mesh.bufferDrawData_),
-    .AABBs    = ctx->gpuAddress(bufferAABBs),
-  };
+  // clang-format off
+  const mat4 scaleBias = mat4(0.5, 0.0, 0.0, 0.0,
+                              0.0, 0.5, 0.0, 0.0,
+                              0.0, 0.0, 1.0, 0.0,
+                              0.5, 0.5, 0.0, 1.0);
+  // clang-format on
 
   app.run([&](uint32_t width, uint32_t height, float aspectRatio, float deltaSeconds) {
     const mat4 view = app.camera_.getViewMatrix();
     const mat4 proj = glm::perspective(45.0f, aspectRatio, 0.1f, 200.0f);
 
+    const glm::mat4 rot1 = glm::rotate(mat4(1.f), glm::radians(light.theta), glm::vec3(0, 1, 0));
+    const glm::mat4 rot2 = glm::rotate(rot1, glm::radians(light.phi), glm::vec3(1, 0, 0));
+    const vec3 lightDir  = glm::normalize(vec3(rot2 * vec4(0.0f, -1.0f, 0.0f, 1.0f)));
+    const mat4 lightView = glm::lookAt(glm::vec3(0.0f), lightDir, vec3(0, 0, 1));
+
+	 // transform scene AABB to light space
+    const BoundingBox boxLS = bigBoxWS.getTransformed(lightView);
+    const mat4 lightProj = glm::orthoLH_ZO(boxLS.min_.x, boxLS.max_.x, boxLS.min_.y, boxLS.max_.y, boxLS.max_.z, boxLS.min_.z);
+
     lvk::ICommandBuffer& buf = ctx->acquireCommandBuffer();
     {
-      // 0. Cull scene
-      if (!freezeCullingView)
-        cullingView = app.camera_.getViewMatrix();
-
-      CullingData cullingData = {
-        .numMeshesToCull = static_cast<uint32_t>(scene.meshForNode.size()),
-      };
-
-      getFrustumPlanes(proj * cullingView, cullingData.frustumPlanes);
-      getFrustumCorners(proj * cullingView, cullingData.frustumCorners);
-
-      // cull
-      if (cullingMode == CullingMode_None) {
-        numVisibleMeshes                = static_cast<uint32_t>(scene.meshForNode.size());
-        DrawIndexedIndirectCommand* cmd = mesh.getDrawIndexedIndirectCommandPtr();
-        for (auto& p : scene.meshForNode) {
-          (cmd++)->instanceCount = 1;
-        }
-        ctx->flushMappedMemory(mesh.indirectBuffer_.bufferIndirect_, 0, mesh.numMeshes_ * sizeof(DrawIndexedIndirectCommand));
-      } else if (cullingMode == CullingMode_CPU) {
-        numVisibleMeshes = 0;
-
-        DrawIndexedIndirectCommand* cmd = mesh.getDrawIndexedIndirectCommandPtr();
-        for (auto& p : scene.meshForNode) {
-          const BoundingBox box  = reorderedBoxes[p.first];
-          const uint32_t count   = isBoxInFrustum(cullingData.frustumPlanes, cullingData.frustumCorners, box) ? 1 : 0;
-          (cmd++)->instanceCount = count;
-          numVisibleMeshes += count;
-        }
-        ctx->flushMappedMemory(mesh.indirectBuffer_.bufferIndirect_, 0, mesh.numMeshes_ * sizeof(DrawIndexedIndirectCommand));
-      } else if (cullingMode == CullingMode_GPU) {
-        buf.cmdBindComputePipeline(pipelineCulling);
-        pcCulling.meshes = ctx->gpuAddress(bufferCullingData[currentBufferId]);
-        buf.cmdPushConstants(pcCulling);
-        buf.cmdUpdateBuffer(bufferCullingData[currentBufferId], cullingData);
-        buf.cmdDispatchThreadGroups(
-            { 1 + cullingData.numMeshesToCull / 64 }, { .buffers = { lvk::BufferHandle(mesh.indirectBuffer_.bufferIndirect_) } });
-      }
-
-      canvas3d.clear();
-      canvas3d.setMatrix(proj * view);
-
-      if (freezeCullingView) {
-        canvas3d.frustum(cullingView, proj, vec4(1, 1, 0, 1));
-      }
-      // render all bounding boxes (red)
-      if (drawBoxes) {
-        const DrawIndexedIndirectCommand* cmd = mesh.getDrawIndexedIndirectCommandPtr();
-        for (auto& p : scene.meshForNode) {
-          const BoundingBox box = meshData.boxes[p.second];
-          canvas3d.box(scene.globalTransform[p.first], box, (cmd++)->instanceCount ? vec4(0, 1, 0, 1) : vec4(1, 0, 0, 1));
-        }
+      // update shadow map
+      if (prevLight != light) {
+        prevLight = light;
+        buf.cmdBeginRendering(
+            lvk::RenderPass{
+                .depth = {.loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f}
+        },
+            lvk::Framebuffer{ .depthStencil = { .texture = shadowMap } });
+        buf.cmdPushDebugGroupLabel("Shadow map", 0xff0000ff);
+        buf.cmdSetDepthBias(light.depthBiasConst, light.depthBiasSlope);
+        buf.cmdSetDepthBiasEnable(true);
+        mesh.draw(buf, pipelineShadow, lightView, lightProj);
+        buf.cmdSetDepthBiasEnable(false);
+        buf.cmdPopDebugGroupLabel();
+        buf.cmdEndRendering();
+        buf.cmdUpdateBuffer(
+            bufferLight, LightData{
+                             .viewProjBias  = scaleBias * lightProj * lightView,
+                             .lightDir      = vec4(lightDir, 0.0f),
+                             .shadowTexture = shadowMap.index(),
+                             .shadowSampler = samplerShadow.index(),
+                         });
       }
 
       // 1. Render scene
@@ -217,14 +186,39 @@ int main()
               .color = { { .loadOp = lvk::LoadOp_Clear, .storeOp = lvk::StoreOp_MsaaResolve, .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f } } },
               .depth = { .loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f }
       },
-          framebufferMSAA, { .buffers = { lvk::BufferHandle(mesh.indirectBuffer_.bufferIndirect_) } });
+          framebufferMSAA, { .textures = { lvk::TextureHandle(shadowMap) } });
       skyBox.draw(buf, view, proj);
       if (drawMeshes) {
+        const struct {
+          mat4 viewProj;
+          uint64_t bufferTransforms;
+          uint64_t bufferDrawData;
+          uint64_t bufferMaterials;
+          uint64_t bufferLight;
+          uint32_t texSkyboxIrradiance;
+        } pc = {
+          .viewProj            = proj * view,
+          .bufferTransforms    = ctx->gpuAddress(mesh.bufferTransforms_),
+          .bufferDrawData      = ctx->gpuAddress(mesh.bufferDrawData_),
+          .bufferMaterials     = ctx->gpuAddress(mesh.bufferMaterials_),
+          .bufferLight         = ctx->gpuAddress(bufferLight),
+          .texSkyboxIrradiance = skyBox.texSkyboxIrradiance.index(),
+        };
         buf.cmdPushDebugGroupLabel("Mesh", 0xff0000ff);
-        mesh.draw(buf, pipeline, view, proj, skyBox.texSkyboxIrradiance, drawWireframe);
+        mesh.draw(buf, pipelineMesh, &pc, sizeof(pc), { .compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = true }, drawWireframe);
         buf.cmdPopDebugGroupLabel();
       }
       app.drawGrid(buf, proj, vec3(0, -1.0f, 0), kNumSamples);
+      canvas3d.clear();
+      canvas3d.setMatrix(proj * view);
+      canvas3d.frustum(lightView, lightProj, vec4(1, 1, 0, 1));
+      // render all bounding boxes (red)
+      if (drawBoxes) {
+        for (auto& p : scene.meshForNode) {
+          const BoundingBox box = meshData.boxes[p.second];
+          canvas3d.box(scene.globalTransform[p.first], box, vec4(1, 0, 0, 1));
+        }
+      }
       canvas3d.render(*ctx.get(), framebufferMSAA, buf, kNumSamples);
       buf.cmdEndRendering();
 
@@ -250,23 +244,25 @@ int main()
         ImGui::Begin(
             "Controls", nullptr, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Checkbox("Draw wireframe", &drawWireframe);
-
-        const float indentSize = 16.0f;
         ImGui::Text("Draw:");
+        const float indentSize = 16.0f;
         ImGui::Indent(indentSize);
         ImGui::Checkbox("Meshes", &drawMeshes);
         ImGui::Checkbox("Boxes", &drawBoxes);
         ImGui::Unindent(indentSize);
         ImGui::Separator();
-        ImGui::Text("Culling:");
+        ImGui::Text("Depth bias factor:");
         ImGui::Indent(indentSize);
-        ImGui::RadioButton("None (N)", &cullingMode, CullingMode_None);
-        ImGui::RadioButton("CPU  (C)", &cullingMode, CullingMode_CPU);
-        ImGui::RadioButton("GPU  (G)", &cullingMode, CullingMode_GPU);
+        ImGui::SliderFloat("Constant", &light.depthBiasConst, 0.0f, 5.0f);
+        ImGui::SliderFloat("Slope", &light.depthBiasSlope, 0.0f, 5.0f);
         ImGui::Unindent(indentSize);
-        ImGui::Checkbox("Freeze culling frustum (P)", &freezeCullingView);
         ImGui::Separator();
-        ImGui::Text("Visible meshes: %i", numVisibleMeshes);
+        ImGui::Text("Light angles:");
+        ImGui::Indent(indentSize);
+        ImGui::SliderFloat("Theta", &light.theta, -180.0f, +180.0f);
+        ImGui::SliderFloat("Phi", &light.phi, -85.0f, +85.0f);
+        ImGui::Unindent(indentSize);
+        ImGui::Image(shadowMap.index(), ImVec2(512, 512));
         ImGui::End();
       }
 
@@ -274,14 +270,7 @@ int main()
 
       buf.cmdEndRendering();
     }
-    submitHandle[currentBufferId] = ctx->submit(buf, ctx->getCurrentSwapchainTexture());
-
-    currentBufferId = (currentBufferId + 1) % LVK_ARRAY_NUM_ELEMENTS(bufferCullingData);
-
-    if (cullingMode == CullingMode_GPU && app.fpsCounter_.numFrames_ > 1) {
-      ctx->wait(submitHandle[currentBufferId]);
-      ctx->download(bufferCullingData[currentBufferId], &numVisibleMeshes, sizeof(uint32_t), offsetof(CullingData, numVisibleMeshes));
-    }
+    ctx->submit(buf, ctx->getCurrentSwapchainTexture());
   });
 
   ctx.release();
