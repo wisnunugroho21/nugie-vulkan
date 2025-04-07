@@ -66,6 +66,16 @@ struct MetallicRoughnessDataGPU {
   uint padding[2];
 };
 
+struct TransparentFragment {
+  f16vec4 color;
+  float depth;
+  uint next;
+};
+
+layout(std430, buffer_reference) buffer TransparencyListsBuffer {
+  TransparentFragment frags[];
+};
+
 struct DrawData {
   uint transformId;
   uint materialId;
@@ -83,19 +93,25 @@ layout(std430, buffer_reference) readonly buffer MaterialBuffer {
   MetallicRoughnessDataGPU material[];
 };
 
-layout(std430, buffer_reference) readonly buffer LightBuffer {
-  mat4 viewProjBias;
-  vec4 lightDir;
-  uint shadowTexture;
-  uint shadowSampler;
+layout(std430, buffer_reference) buffer AtomicCounter {
+  uint numFragments;
+};
+
+layout(std430, buffer_reference) buffer OIT {
+  AtomicCounter atomicCounter;
+  TransparencyListsBuffer oitLists;
+  uint texHeadsOIT;
+  uint maxOITFragments;
 };
 
 layout(push_constant) uniform PerFrameData {
   mat4 viewProj;
+  vec4 cameraPos;
   TransformBuffer transforms;
   DrawDataBuffer drawData;
   MaterialBuffer materials;
-  LightBuffer light; // one directional light
+  OIT oit;
+  uint texSkybox;
   uint texSkyboxIrradiance;
 } pc;
 
@@ -107,7 +123,6 @@ layout (location=0) out vec2 uv;
 layout (location=1) out vec3 normal;
 layout (location=2) out vec3 worldPos;
 layout (location=3) out flat uint materialId;
-layout (location=4) out vec4 shadowCoords;
 
 void main() {
   mat4 model = pc.transforms.model[pc.drawData.dd[gl_BaseInstance].transformId];
@@ -117,6 +132,4 @@ void main() {
   vec4 posClip = model * vec4(in_pos, 1.0);
   worldPos = posClip.xyz/posClip.w;
   materialId = pc.drawData.dd[gl_BaseInstance].materialId;
-
-  shadowCoords = pc.light.viewProjBias * posClip;
 }

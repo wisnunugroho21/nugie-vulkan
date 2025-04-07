@@ -17,19 +17,11 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
-#include "shared/LineCanvas.h"
-
-bool drawMeshes    = true;
-bool drawBoxes     = false;
-bool drawWireframe = false;
-struct LightParams {
-  float theta          = +90.0f;
-  float phi            = -26.0f;
-  float depthBiasConst = 1.1f;
-  float depthBiasSlope = 2.0f;
-
-  bool operator==(const LightParams&) const = default;
-} light;
+bool drawMeshesOpaque      = true;
+bool drawMeshesTransparent = true;
+bool drawWireframe         = false;
+bool showHeatmap           = false;
+float opacityBoost         = 0.0f;
 
 int main()
 {
@@ -38,13 +30,11 @@ int main()
   loadBistro(meshData, scene);
 
   VulkanApp app({
-      .initialCameraPos    = vec3(-19.261f, 8.465f, -7.317f),
-      .initialCameraTarget = vec3(0, +2.5f, 0),
+      .initialCameraPos    = vec3(1.835f, 1.922f, 6.412f),
+      .initialCameraTarget = vec3(2.0f, 1.9f, 6.0f),
   });
 
   app.positioner_.maxSpeed_ = 1.5f;
-
-  LineCanvas3D canvas3d;
 
   std::unique_ptr<lvk::IContext> ctx(app.ctx_.get());
 
@@ -52,133 +42,125 @@ int main()
 
   const uint32_t kNumSamples = 8;
 
-  lvk::Holder<lvk::TextureHandle> msaaColor = ctx->createTexture({
+  lvk::Holder<lvk::TextureHandle> msaaColor      = ctx->createTexture({
+           .format     = ctx->getSwapchainFormat(),
+           .dimensions = sizeFb,
+           .numSamples = kNumSamples,
+           .usage      = lvk::TextureUsageBits_Attachment,
+           .storage    = lvk::StorageType_Memoryless,
+           .debugName  = "msaaColor",
+  });
+  lvk::Holder<lvk::TextureHandle> msaaDepth      = ctx->createTexture({
+           .format     = app.getDepthFormat(),
+           .dimensions = sizeFb,
+           .numSamples = kNumSamples,
+           .usage      = lvk::TextureUsageBits_Attachment,
+           .storage    = lvk::StorageType_Memoryless,
+           .debugName  = "msaaDepth",
+  });
+  lvk::Holder<lvk::TextureHandle> offscreenColor = ctx->createTexture({
       .format     = ctx->getSwapchainFormat(),
       .dimensions = sizeFb,
-      .numSamples = kNumSamples,
-      .usage      = lvk::TextureUsageBits_Attachment,
-      .storage    = lvk::StorageType_Memoryless,
-      .debugName  = "msaaColor",
-  });
-  lvk::Holder<lvk::TextureHandle> msaaDepth = ctx->createTexture({
-      .format     = app.getDepthFormat(),
-      .dimensions = sizeFb,
-      .numSamples = kNumSamples,
-      .usage      = lvk::TextureUsageBits_Attachment,
-      .storage    = lvk::StorageType_Memoryless,
-      .debugName  = "msaaDepth",
-  });
-
-  lvk::Holder<lvk::TextureHandle> shadowMap = ctx->createTexture({
-      .type       = lvk::TextureType_2D,
-      .format     = lvk::Format_Z_UN16,
-      .dimensions = { 4096, 4096 },
-      .usage      = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
-      .swizzle    = { .r = lvk::Swizzle_R, .g = lvk::Swizzle_R, .b = lvk::Swizzle_R, .a = lvk::Swizzle_1 },
-      .debugName  = "Shadow map",
-  });
-
-  lvk::Holder<lvk::SamplerHandle> samplerShadow = ctx->createSampler({
-      .wrapU               = lvk::SamplerWrap_Clamp,
-      .wrapV               = lvk::SamplerWrap_Clamp,
-      .depthCompareOp      = lvk::CompareOp_LessEqual,
-      .depthCompareEnabled = true,
-      .debugName           = "Sampler: shadow",
-  });
-
-  struct LightData {
-    mat4 viewProjBias;
-    vec4 lightDir;
-    uint32_t shadowTexture;
-    uint32_t shadowSampler;
-  };
-  lvk::Holder<lvk::BufferHandle> bufferLight = ctx->createBuffer({
-      .usage     = lvk::BufferUsageBits_Storage,
-      .storage   = lvk::StorageType_Device,
-      .size      = sizeof(LightData),
-      .debugName = "Buffer: light",
+      .usage      = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+      .debugName  = "offscreenColor",
   });
 
   const Skybox skyBox(
       ctx, "../../data/immenstadter_horn_2k_prefilter.ktx", "../../data/immenstadter_horn_2k_irradiance.ktx", ctx->getSwapchainFormat(),
       app.getDepthFormat(), kNumSamples);
-
   const VKMesh11 mesh(ctx, meshData, scene);
-  const VKPipeline11 pipelineMesh(
+  const VKPipeline11 pipelineOpaque(
       ctx, meshData.streams, ctx->getSwapchainFormat(), app.getDepthFormat(), kNumSamples,
-      loadShaderModule(ctx, "../../src/shaders/main.vert"),
-      loadShaderModule(ctx, "../../src/shaders/main.frag"));
-  const VKPipeline11 pipelineShadow(
-      ctx, meshData.streams, lvk::Format_Invalid, ctx->getFormat(shadowMap), 1,
-      loadShaderModule(ctx, "../../src/shaders/directional_shadow/shadow.vert"),
-      loadShaderModule(ctx, "../../src/shaders/directional_shadow/shadow.frag"));
+      loadShaderModule(ctx, "../../src/shaders/main.vert"), loadShaderModule(ctx, "../../src/shaders/oit/opaque.frag"));
+  const VKPipeline11 pipelineTransparent(
+      ctx, meshData.streams, ctx->getSwapchainFormat(), app.getDepthFormat(), kNumSamples,
+      loadShaderModule(ctx, "../../src/shaders/main.vert"), loadShaderModule(ctx, "../../src/shaders/oit/transparent.frag"));
 
-  // pretransform bounding boxes to world space
-  std::vector<BoundingBox> reorderedBoxes;
-  reorderedBoxes.resize(scene.globalTransform.size());
-  for (auto& p : scene.meshForNode) {
-    reorderedBoxes[p.first] = meshData.boxes[p.second].getTransformed(scene.globalTransform[p.first]);
-  }
+  lvk::Holder<lvk::ShaderModuleHandle> vertOIT       = loadShaderModule(ctx, "../../src/shaders/util/QuadFlip.vert");
+  lvk::Holder<lvk::ShaderModuleHandle> fragOIT       = loadShaderModule(ctx, "../../src/shaders/oit/oit.frag");
+  lvk::Holder<lvk::RenderPipelineHandle> pipelineOIT = ctx->createRenderPipeline({
+      .smVert = vertOIT,
+      .smFrag = fragOIT,
+      .color  = { { .format = ctx->getSwapchainFormat() } },
+  });
 
-  // create the scene AABB in world space
-  BoundingBox bigBoxWS = reorderedBoxes.front();
-  for (const auto& b : reorderedBoxes) {
-    bigBoxWS.combinePoint(b.min_);
-    bigBoxWS.combinePoint(b.max_);
-  }
+  VKIndirectBuffer11 meshesOpaque(ctx, mesh.numMeshes_);
+  VKIndirectBuffer11 meshesTransparent(ctx, mesh.numMeshes_);
 
-  // update shadow map
-  LightParams prevLight = { .depthBiasConst = 0 };
+  auto isTransparent = [&meshData, &mesh](const DrawIndexedIndirectCommand& c) -> bool {
+    const uint32_t mtlIndex = mesh.drawData_[c.baseInstance].materialId;
+    const Material& mtl     = meshData.materials[mtlIndex];
+    return (mtl.flags & sMaterialFlags_Transparent) > 0;
+  };
 
-  // clang-format off
-  const mat4 scaleBias = mat4(0.5, 0.0, 0.0, 0.0,
-                              0.0, 0.5, 0.0, 0.0,
-                              0.0, 0.0, 1.0, 0.0,
-                              0.5, 0.5, 0.0, 1.0);
-  // clang-format on
+  mesh.indirectBuffer_.selectTo(meshesOpaque, [&isTransparent](const DrawIndexedIndirectCommand& c) -> bool { return !isTransparent(c); });
+  mesh.indirectBuffer_.selectTo(
+      meshesTransparent, [&isTransparent](const DrawIndexedIndirectCommand& c) -> bool { return isTransparent(c); });
+
+  struct TransparentFragment {
+    uint64_t rgba; // f16vec4
+    float depth;
+    uint32_t next;
+  };
+
+  const uint32_t kMaxOITFragments = sizeFb.width * sizeFb.height * kNumSamples;
+
+  lvk::Holder<lvk::BufferHandle> bufferTransparencyLists = ctx->createBuffer({
+      .usage     = lvk::BufferUsageBits_Storage,
+      .storage   = lvk::StorageType_Device,
+      .size      = sizeof(TransparentFragment) * kMaxOITFragments,
+      .debugName = "Buffer: transparency lists",
+  });
+
+  lvk::Holder<lvk::TextureHandle> textureHeadsOIT = ctx->createTexture({
+      .format     = lvk::Format_R_UI32,
+      .dimensions = sizeFb,
+      .usage      = lvk::TextureUsageBits_Storage,
+      .debugName  = "oitHeads",
+  });
+
+  lvk::Holder<lvk::BufferHandle> bufferAtomicCounter = ctx->createBuffer({
+      .usage     = lvk::BufferUsageBits_Storage,
+      .storage   = lvk::StorageType_Device,
+      .size      = sizeof(uint32_t),
+      .debugName = "Buffer: atomic counter",
+  });
+
+  const struct OITBuffer {
+    uint64_t bufferAtomicCounter;
+    uint64_t bufferTransparencyLists;
+    uint32_t texHeadsOIT;
+    uint32_t maxOITFragments;
+  } oitBufferData = {
+    .bufferAtomicCounter     = ctx->gpuAddress(bufferAtomicCounter),
+    .bufferTransparencyLists = ctx->gpuAddress(bufferTransparencyLists),
+    .texHeadsOIT             = textureHeadsOIT.index(),
+    .maxOITFragments         = kMaxOITFragments,
+  };
+
+  lvk::Holder<lvk::BufferHandle> bufferOIT = ctx->createBuffer({
+      .usage     = lvk::BufferUsageBits_Storage,
+      .storage   = lvk::StorageType_Device,
+      .size      = sizeof(oitBufferData),
+      .data      = &oitBufferData,
+      .debugName = "Buffer: OIT",
+  });
+
+  auto clearTransparencyBuffers = [&bufferAtomicCounter, &textureHeadsOIT, sizeFb](lvk::ICommandBuffer& buf) {
+    buf.cmdClearColorImage(textureHeadsOIT, { .uint32 = { 0xffffffff } });
+    buf.cmdFillBuffer(bufferAtomicCounter, 0, sizeof(uint32_t), 0);
+  };
 
   app.run([&](uint32_t width, uint32_t height, float aspectRatio, float deltaSeconds) {
     const mat4 view = app.camera_.getViewMatrix();
     const mat4 proj = glm::perspective(45.0f, aspectRatio, 0.1f, 200.0f);
 
-    const glm::mat4 rot1 = glm::rotate(mat4(1.f), glm::radians(light.theta), glm::vec3(0, 1, 0));
-    const glm::mat4 rot2 = glm::rotate(rot1, glm::radians(light.phi), glm::vec3(1, 0, 0));
-    const vec3 lightDir  = glm::normalize(vec3(rot2 * vec4(0.0f, -1.0f, 0.0f, 1.0f)));
-    const mat4 lightView = glm::lookAt(glm::vec3(0.0f), lightDir, vec3(0, 0, 1));
-
-	 // transform scene AABB to light space
-    const BoundingBox boxLS = bigBoxWS.getTransformed(lightView);
-    const mat4 lightProj = glm::orthoLH_ZO(boxLS.min_.x, boxLS.max_.x, boxLS.min_.y, boxLS.max_.y, boxLS.max_.z, boxLS.min_.z);
-
     lvk::ICommandBuffer& buf = ctx->acquireCommandBuffer();
     {
-      // update shadow map
-      if (prevLight != light) {
-        prevLight = light;
-        buf.cmdBeginRendering(
-            lvk::RenderPass{
-                .depth = {.loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f}
-        },
-            lvk::Framebuffer{ .depthStencil = { .texture = shadowMap } });
-        buf.cmdPushDebugGroupLabel("Shadow map", 0xff0000ff);
-        buf.cmdSetDepthBias(light.depthBiasConst, light.depthBiasSlope);
-        buf.cmdSetDepthBiasEnable(true);
-        mesh.draw(buf, pipelineShadow, lightView, lightProj);
-        buf.cmdSetDepthBiasEnable(false);
-        buf.cmdPopDebugGroupLabel();
-        buf.cmdEndRendering();
-        buf.cmdUpdateBuffer(
-            bufferLight, LightData{
-                             .viewProjBias  = scaleBias * lightProj * lightView,
-                             .lightDir      = vec4(lightDir, 0.0f),
-                             .shadowTexture = shadowMap.index(),
-                             .shadowSampler = samplerShadow.index(),
-                         });
-      }
-
+      clearTransparencyBuffers(buf);
       // 1. Render scene
       const lvk::Framebuffer framebufferMSAA = {
-        .color        = { { .texture = msaaColor, .resolveTexture = ctx->getCurrentSwapchainTexture() } },
+        .color        = { { .texture = msaaColor, .resolveTexture = offscreenColor } },
         .depthStencil = { .texture = msaaDepth },
       };
       buf.cmdBeginRendering(
@@ -186,40 +168,42 @@ int main()
               .color = { { .loadOp = lvk::LoadOp_Clear, .storeOp = lvk::StoreOp_MsaaResolve, .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f } } },
               .depth = { .loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f }
       },
-          framebufferMSAA, { .textures = { lvk::TextureHandle(shadowMap) } });
+          framebufferMSAA);
       skyBox.draw(buf, view, proj);
-      if (drawMeshes) {
-        const struct {
-          mat4 viewProj;
-          uint64_t bufferTransforms;
-          uint64_t bufferDrawData;
-          uint64_t bufferMaterials;
-          uint64_t bufferLight;
-          uint32_t texSkyboxIrradiance;
-        } pc = {
-          .viewProj            = proj * view,
-          .bufferTransforms    = ctx->gpuAddress(mesh.bufferTransforms_),
-          .bufferDrawData      = ctx->gpuAddress(mesh.bufferDrawData_),
-          .bufferMaterials     = ctx->gpuAddress(mesh.bufferMaterials_),
-          .bufferLight         = ctx->gpuAddress(bufferLight),
-          .texSkyboxIrradiance = skyBox.texSkyboxIrradiance.index(),
-        };
+      const struct {
+        mat4 viewProj;
+        vec4 cameraPos;
+        uint64_t bufferTransforms;
+        uint64_t bufferDrawData;
+        uint64_t bufferMaterials;
+        uint64_t bufferOIT;
+        uint32_t texSkybox;
+        uint32_t texSkyboxIrradiance;
+      } pc = {
+        .viewProj            = proj * view,
+        .cameraPos           = vec4(app.camera_.getPosition(), 1.0f),
+        .bufferTransforms    = ctx->gpuAddress(mesh.bufferTransforms_),
+        .bufferDrawData      = ctx->gpuAddress(mesh.bufferDrawData_),
+        .bufferMaterials     = ctx->gpuAddress(mesh.bufferMaterials_),
+        .bufferOIT           = ctx->gpuAddress(bufferOIT),
+        .texSkybox           = skyBox.texSkybox.index(),
+        .texSkyboxIrradiance = skyBox.texSkyboxIrradiance.index(),
+      };
+      if (drawMeshesOpaque) {
         buf.cmdPushDebugGroupLabel("Mesh", 0xff0000ff);
-        mesh.draw(buf, pipelineMesh, &pc, sizeof(pc), { .compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = true }, drawWireframe);
+        mesh.draw(
+            buf, pipelineOpaque, &pc, sizeof(pc), { .compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = true }, drawWireframe,
+            &meshesOpaque);
+        buf.cmdPopDebugGroupLabel();
+      }
+      if (drawMeshesTransparent) {
+        buf.cmdPushDebugGroupLabel("Mesh", 0xff0000ff);
+        mesh.draw(
+            buf, pipelineTransparent, &pc, sizeof(pc), { .compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = false }, drawWireframe,
+            &meshesTransparent);
         buf.cmdPopDebugGroupLabel();
       }
       app.drawGrid(buf, proj, vec3(0, -1.0f, 0), kNumSamples);
-      canvas3d.clear();
-      canvas3d.setMatrix(proj * view);
-      canvas3d.frustum(lightView, lightProj, vec4(1, 1, 0, 1));
-      // render all bounding boxes (red)
-      if (drawBoxes) {
-        for (auto& p : scene.meshForNode) {
-          const BoundingBox box = meshData.boxes[p.second];
-          canvas3d.box(scene.globalTransform[p.first], box, vec4(1, 0, 0, 1));
-        }
-      }
-      canvas3d.render(*ctx.get(), framebufferMSAA, buf, kNumSamples);
       buf.cmdEndRendering();
 
       const lvk::Framebuffer framebufferMain = {
@@ -228,9 +212,32 @@ int main()
 
       buf.cmdBeginRendering(
           lvk::RenderPass{
-              .color = { { .loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store } },
-          },
-          framebufferMain);
+              .color = {{ .loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store }},
+      },
+          framebufferMain,
+          { .textures = { lvk::TextureHandle(textureHeadsOIT), lvk::TextureHandle(offscreenColor) },
+            .buffers  = { lvk::BufferHandle(bufferTransparencyLists) } });
+
+      // combine OIT
+      const struct {
+        uint64_t bufferTransparencyLists;
+        uint32_t texColor;
+        uint32_t texHeadsOIT;
+        float time;
+        float opacityBoost;
+        uint32_t showHeatmap;
+      } pcOIT = {
+        .bufferTransparencyLists = ctx->gpuAddress(bufferTransparencyLists),
+        .texColor                = offscreenColor.index(),
+        .texHeadsOIT             = textureHeadsOIT.index(),
+        .time                    = static_cast<float>(glfwGetTime()),
+        .opacityBoost            = opacityBoost,
+        .showHeatmap             = showHeatmap ? 1u : 0u,
+      };
+      buf.cmdBindRenderPipeline(pipelineOIT);
+      buf.cmdPushConstants(pcOIT);
+      buf.cmdBindDepthState({});
+      buf.cmdDraw(3);
 
       app.imgui_->beginFrame(framebufferMain);
       app.drawFPS();
@@ -241,28 +248,17 @@ int main()
         const ImGuiViewport* v  = ImGui::GetMainViewport();
         const float windowWidth = v->WorkSize.x / 5;
         ImGui::SetNextWindowPos(ImVec2(10, 200));
-        ImGui::Begin(
-            "Controls", nullptr, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize);
         ImGui::Checkbox("Draw wireframe", &drawWireframe);
         ImGui::Text("Draw:");
         const float indentSize = 16.0f;
         ImGui::Indent(indentSize);
-        ImGui::Checkbox("Meshes", &drawMeshes);
-        ImGui::Checkbox("Boxes", &drawBoxes);
+        ImGui::Checkbox("Opaque meshes", &drawMeshesOpaque);
+        ImGui::Checkbox("Transparent meshes", &drawMeshesTransparent);
         ImGui::Unindent(indentSize);
         ImGui::Separator();
-        ImGui::Text("Depth bias factor:");
-        ImGui::Indent(indentSize);
-        ImGui::SliderFloat("Constant", &light.depthBiasConst, 0.0f, 5.0f);
-        ImGui::SliderFloat("Slope", &light.depthBiasSlope, 0.0f, 5.0f);
-        ImGui::Unindent(indentSize);
-        ImGui::Separator();
-        ImGui::Text("Light angles:");
-        ImGui::Indent(indentSize);
-        ImGui::SliderFloat("Theta", &light.theta, -180.0f, +180.0f);
-        ImGui::SliderFloat("Phi", &light.phi, -85.0f, +85.0f);
-        ImGui::Unindent(indentSize);
-        ImGui::Image(shadowMap.index(), ImVec2(512, 512));
+        ImGui::SliderFloat("Opacity boost", &opacityBoost, -1.0f, +1.0f);
+        ImGui::Checkbox("Show transparency heat map", &showHeatmap);
         ImGui::End();
       }
 
