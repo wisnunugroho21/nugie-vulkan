@@ -97,6 +97,13 @@ layout(std430, buffer_reference) buffer AtomicCounter {
   uint numFragments;
 };
 
+layout(std430, buffer_reference) readonly buffer LightBuffer {
+  mat4 viewProjBias;
+  vec4 lightDir;
+  uint shadowTexture;
+  uint shadowSampler;
+};
+
 layout(std430, buffer_reference) buffer OIT {
   AtomicCounter atomicCounter;
   TransparencyListsBuffer oitLists;
@@ -111,6 +118,7 @@ layout(push_constant) uniform PerFrameData {
   DrawDataBuffer drawData;
   MaterialBuffer materials;
   OIT oit;
+  LightBuffer light; // one directional light
   uint texSkybox;
   uint texSkyboxIrradiance;
 } pc;
@@ -132,6 +140,24 @@ void runAlphaTest(float alpha, float alphaThreshold)
     if (alpha < alphaThreshold)
       discard;
   }
+}
+
+float PCF3x3(vec3 uvw, uint textureid, uint samplerid) {
+  float size = 1.0 / textureBindlessSize2D(textureid).x; // assume square texture
+  float shadow = 0.0;
+  for (int v=-1; v<=+1; v++)
+    for (int u=-1; u<=+1; u++)
+      shadow += textureBindless2DShadow(textureid, samplerid, uvw + size * vec3(u, v, 0));
+  return shadow / 9;
+}
+
+float shadow(vec4 s, uint textureid, uint samplerid) {
+  s = s / s.w;
+  if (s.z > -1.0 && s.z < 1.0) {
+    float shadowSample = PCF3x3(vec3(s.x, 1.0 - s.y, s.z), textureid, samplerid);
+    return mix(0.3, 1.0, shadowSample);
+  }
+  return 1.0;
 }
 
 const float M_PI = 3.141592653589793;
@@ -179,6 +205,7 @@ layout (location=0) in vec2 uv;
 layout (location=1) in vec3 normal;
 layout (location=2) in vec3 worldPos;
 layout (location=3) in flat uint materialId;
+layout (location=4) in vec4 shadowCoords;
 
 layout (location=0) out vec4 out_FragColor;
 
@@ -202,17 +229,13 @@ void main() {
 
   const bool hasSkybox = pc.texSkyboxIrradiance > 0;
 
-  // two hardcoded directional lights
-  float NdotL1 = clamp(dot(n, normalize(vec3(-1, 1,+0.5))), 0.1, 1.0);
-  float NdotL2 = clamp(dot(n, normalize(vec3(+1, 1,-0.5))), 0.1, 1.0);
-  float NdotL = (hasSkybox ? 0.2 : 1.0) * (NdotL1+NdotL2);
+  // one directional light
+  float NdotL = clamp(dot(n, -normalize(pc.light.lightDir.xyz)), 0.1, 1.0);
 
   // IBL diffuse - not trying to be PBR-correct here, just make it simple & shiny
   const vec4 f0 = vec4(0.04);
   vec3 sky = vec3(-n.x, n.y, -n.z); // rotate skybox
-  vec4 diffuse = hasSkybox ?
-    (textureBindlessCube(pc.texSkyboxIrradiance, 0, sky) + vec4(NdotL)) * baseColor * (vec4(1.0) - f0) :
-    NdotL * baseColor;
+  vec4 diffuse = (textureBindlessCube(pc.texSkyboxIrradiance, 0, sky) + vec4(NdotL)) * baseColor * (vec4(1.0) - f0);
 
-  out_FragColor = emissiveColor + diffuse;
+  out_FragColor = emissiveColor + diffuse * shadow(shadowCoords, pc.light.shadowTexture, pc.light.shadowSampler);
 }

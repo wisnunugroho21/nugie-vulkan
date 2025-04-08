@@ -97,6 +97,13 @@ layout(std430, buffer_reference) buffer AtomicCounter {
   uint numFragments;
 };
 
+layout(std430, buffer_reference) readonly buffer LightBuffer {
+  mat4 viewProjBias;
+  vec4 lightDir;
+  uint shadowTexture;
+  uint shadowSampler;
+};
+
 layout(std430, buffer_reference) buffer OIT {
   AtomicCounter atomicCounter;
   TransparencyListsBuffer oitLists;
@@ -111,9 +118,28 @@ layout(push_constant) uniform PerFrameData {
   DrawDataBuffer drawData;
   MaterialBuffer materials;
   OIT oit;
+  LightBuffer light; // one directional light
   uint texSkybox;
   uint texSkyboxIrradiance;
 } pc;
+
+float PCF3x3(vec3 uvw, uint textureid, uint samplerid) {
+  float size = 1.0 / textureBindlessSize2D(textureid).x; // assume square texture
+  float shadow = 0.0;
+  for (int v=-1; v<=+1; v++)
+    for (int u=-1; u<=+1; u++)
+      shadow += textureBindless2DShadow(textureid, samplerid, uvw + size * vec3(u, v, 0));
+  return shadow / 9;
+}
+
+float shadow(vec4 s, uint textureid, uint samplerid) {
+  s = s / s.w;
+  if (s.z > -1.0 && s.z < 1.0) {
+    float shadowSample = PCF3x3(vec3(s.x, 1.0 - s.y, s.z), textureid, samplerid);
+    return mix(0.3, 1.0, shadowSample);
+  }
+  return 1.0;
+}
 
 const float M_PI = 3.141592653589793;
 
@@ -164,6 +190,7 @@ layout (location=0) in vec2 uv;
 layout (location=1) in vec3 normal;
 layout (location=2) in vec3 worldPos;
 layout (location=3) in flat uint materialId;
+layout (location=4) in vec4 shadowCoords;
 
 vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
   return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
@@ -183,10 +210,8 @@ void main() {
   if (length(normalSample) > 0.5)
     n = perturbNormal(n, worldPos, normalSample, uv);
 
-  // two hardcoded directional lights
-  float NdotL1 = clamp(dot(n, normalize(vec3(-1, 1,+0.5))), 0.1, 1.0);
-  float NdotL2 = clamp(dot(n, normalize(vec3(+1, 1,-0.5))), 0.1, 1.0);
-  float NdotL = 0.2 * (NdotL1+NdotL2);
+  // one directional light
+  float NdotL = clamp(dot(n, -normalize(pc.light.lightDir.xyz)), 0.1, 1.0);
 
   // IBL diffuse - not trying to be PBR-correct here, just make it simple & shiny
   const vec4 f0 = vec4(0.04);
@@ -198,7 +223,7 @@ void main() {
   reflection = vec3(reflection.x, -reflection.y, reflection.z); // rotate reflection
   vec3 colorRefl = textureBindlessCube(pc.texSkybox, 0, reflection).rgb;
   vec3 kS = fresnelSchlickRoughness(clamp(dot(n, v), 0.0, 1.0), vec3(f0), 0.1);
-  vec3 color = emissiveColor.rgb + diffuse.rgb + colorRefl * kS;
+  vec3 color = emissiveColor.rgb + diffuse.rgb * shadow(shadowCoords, pc.light.shadowTexture, pc.light.shadowSampler) + colorRefl * kS;
 
   // Order-Independent Transparency: https://fr.slideshare.net/hgruen/oit-and-indirect-illumination-using-dx11-linked-lists
   float alpha = clamp(baseColor.a * mat.clearcoatTransmissionThickness.z, 0.0, 1.0);
