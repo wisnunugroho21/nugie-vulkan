@@ -1,14 +1,6 @@
 //
 
-struct TransparentFragment {
-  f16vec4 color;
-  float depth;
-  uint next;
-};
-
-layout(std430, buffer_reference) buffer TransparencyListsBuffer {
-  TransparentFragment frags[];
-};
+#include <../../src/shaders/oit/common_oit.sp>
 
 layout (set = 0, binding = 2, r32ui) uniform uimage2D kTextures2DIn[];
 

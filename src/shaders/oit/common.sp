@@ -1,7 +1,7 @@
 //
 
-#include <data/shaders/gltf/common_material.sp>
-#include <Chapter11/04_OIT/src/common_oit.sp>
+#include <../../src/shaders/gltf/common_material.sp>
+#include <../../src/shaders/oit/common_oit.sp>
 
 struct DrawData {
   uint transformId;
@@ -24,6 +24,13 @@ layout(std430, buffer_reference) buffer AtomicCounter {
   uint numFragments;
 };
 
+layout(std430, buffer_reference) readonly buffer LightBuffer {
+  mat4 viewProjBias;
+  vec4 lightDir;
+  uint shadowTexture;
+  uint shadowSampler;
+};
+
 layout(std430, buffer_reference) buffer OIT {
   AtomicCounter atomicCounter;
   TransparencyListsBuffer oitLists;
@@ -38,6 +45,7 @@ layout(push_constant) uniform PerFrameData {
   DrawDataBuffer drawData;
   MaterialBuffer materials;
   OIT oit;
+  LightBuffer light; // one directional light
   uint texSkybox;
   uint texSkyboxIrradiance;
 } pc;

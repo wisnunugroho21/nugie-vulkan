@@ -1,9 +1,6 @@
 //
 
-layout(push_constant) uniform PerFrameData {
-  mat4 mvp;
-  uint texSkybox;
-} pc;
+#include <../../src/shaders/cubemap/common.sp>
 
 layout (location=0) out vec3 dir;
 

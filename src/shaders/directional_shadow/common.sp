@@ -1,6 +1,6 @@
 //
 
-#include <data/shaders/gltf/common_material.sp>
+#include <../../src/shaders/gltf/common_material.sp>
 
 struct DrawData {
   uint transformId;
