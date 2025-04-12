@@ -1,55 +1,63 @@
 ﻿#include "HelpersGLFW.h"
 
-GLFWwindow* initWindow(const char* windowTitle, uint32_t& outWidth, uint32_t& outHeight)
+GLFWwindow *initWindow(const char *windowTitle, uint32_t &outWidth, uint32_t &outHeight)
 {
-  glfwSetErrorCallback([](int error, const char* description) { printf("GLFW Error (%i): %s\n", error, description); });
+	glfwSetErrorCallback([](int error, const char *description)
+						 { printf("GLFW Error (%i): %s\n", error, description); });
 
-  if (!glfwInit()) {
-    return nullptr;
-  }
+	if (!glfwInit())
+	{
+		return nullptr;
+	}
 
-  const bool wantsWholeArea = !outWidth || !outHeight;
+	const bool wantsWholeArea = !outWidth || !outHeight;
 
-  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  glfwWindowHint(GLFW_RESIZABLE, wantsWholeArea ? GLFW_FALSE : GLFW_TRUE);
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	glfwWindowHint(GLFW_RESIZABLE, wantsWholeArea ? GLFW_FALSE : GLFW_TRUE);
 
-  // render full screen without overlapping taskbar
-  GLFWmonitor* monitor    = glfwGetPrimaryMonitor();
-  const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+	// render full screen without overlapping taskbar
+	GLFWmonitor *monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode *mode = glfwGetVideoMode(monitor);
 
-  int x = 0;
-  int y = 0;
-  int w = mode->width;
-  int h = mode->height;
+	int x = 0;
+	int y = 0;
+	int w = mode->width;
+	int h = mode->height;
 
-  if (wantsWholeArea) {
-    glfwGetMonitorWorkarea(monitor, &x, &y, &w, &h);
-  } else {
-    w = outWidth;
-    h = outHeight;
-  }
+	if (wantsWholeArea)
+	{
+		glfwGetMonitorWorkarea(monitor, &x, &y, &w, &h);
+	}
 
-  GLFWwindow* window = glfwCreateWindow(w, h, windowTitle, nullptr, nullptr);
+	else
+	{
+		w = outWidth;
+		h = outHeight;
+	}
 
-  if (!window) {
-    glfwTerminate();
-    return nullptr;
-  }
+	GLFWwindow *window = glfwCreateWindow(w, h, windowTitle, nullptr, nullptr);
 
-  if (wantsWholeArea) {
-    glfwSetWindowPos(window, x, y);
-  }
+	if (!window)
+	{
+		glfwTerminate();
+		return nullptr;
+	}
 
-  glfwGetWindowSize(window, &w, &h);
+	if (wantsWholeArea)
+	{
+		glfwSetWindowPos(window, x, y);
+	}
 
-  glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int, int action, int) {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-      glfwSetWindowShouldClose(window, GLFW_TRUE);
-    }
-  });
+	glfwGetWindowSize(window, &w, &h);
 
-  outWidth  = (uint32_t)w;
-  outHeight = (uint32_t)h;
+	glfwSetKeyCallback(window, [](GLFWwindow *window, int key, int, int action, int)
+					   {
+		if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+			glfwSetWindowShouldClose(window, GLFW_TRUE);
+		} });
 
-  return window;
+	outWidth = (uint32_t)w;
+	outHeight = (uint32_t)h;
+
+	return window;
 }

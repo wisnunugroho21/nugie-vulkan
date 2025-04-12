@@ -24,314 +24,319 @@
 #define fileNameCachedMaterials ".cache/ch11_bistro.materials"
 #define fileNameCachedHierarchy ".cache/ch11_bistro.scene"
 
-bool drawMeshesOpaque      = true;
+bool drawMeshesOpaque = true;
 bool drawMeshesTransparent = true;
-bool drawWireframe         = false;
-bool drawBoxes             = false;
-bool drawLightFrustum      = false;
+bool drawWireframe = false;
+bool drawBoxes = false;
+bool drawLightFrustum = false;
 // SSAO
-bool ssaoEnable          = true;
-bool ssaoEnableBlur      = true;
-int ssaoNumBlurPasses    = 1;
+bool ssaoEnable = true;
+bool ssaoEnableBlur = true;
+int ssaoNumBlurPasses = 1;
 float ssaoDepthThreshold = 30.0f; // bilateral blur
 // OIT
-bool oitShowHeatmap   = false;
+bool oitShowHeatmap = false;
 float oitOpacityBoost = 0.0f;
 // HDR
-bool hdrDrawCurves       = false;
-bool hdrEnableBloom      = true;
-float hdrBloomStrength   = 0.01f;
-int hdrNumBloomPasses    = 2;
+bool hdrDrawCurves = false;
+bool hdrEnableBloom = true;
+float hdrBloomStrength = 0.01f;
+int hdrNumBloomPasses = 2;
 float hdrAdaptationSpeed = 3.0f;
 // Culling
-enum CullingMode {
-  CullingMode_None = 0,
-  CullingMode_CPU  = 1,
-  CullingMode_GPU  = 2,
+enum CullingMode
+{
+	CullingMode_None = 0,
+	CullingMode_CPU = 1,
+	CullingMode_GPU = 2,
 };
-mat4 cullingView       = mat4(1.0f);
-int cullingMode        = CullingMode_CPU;
+mat4 cullingView = mat4(1.0f);
+int cullingMode = CullingMode_CPU;
 bool freezeCullingView = false;
 
-struct LightParams {
-  float theta          = +90.0f;
-  float phi            = -26.0f;
-  float depthBiasConst = 1.1f;
-  float depthBiasSlope = 2.0f;
+struct LightParams
+{
+	float theta = +90.0f;
+	float phi = -26.0f;
+	float depthBiasConst = 1.1f;
+	float depthBiasSlope = 2.0f;
 
-  bool operator==(const LightParams&) const = default;
+	bool operator==(const LightParams &) const = default;
 } light;
 
 int main()
 {
-  MeshData meshData;
-  Scene scene;
-  loadBistro(meshData, scene);
+	MeshData meshData;
+	Scene scene;
+	loadBistro(meshData, scene);
 
-  VulkanApp app({
-      .initialCameraPos    = vec3(-18.621f, 4.621f, -6.359f),
-      .initialCameraTarget = vec3(0, +5.0f, 0),
-  });
+	VulkanApp app({
+		.initialCameraPos = vec3(-18.621f, 4.621f, -6.359f),
+		.initialCameraTarget = vec3(0, +5.0f, 0),
+	});
 
-  app.positioner_.maxSpeed_ = 1.5f;
+	app.positioner_.maxSpeed_ = 1.5f;
 
-  LineCanvas3D canvas3d;
+	LineCanvas3D canvas3d;
 
-  std::unique_ptr<lvk::IContext> ctx(app.ctx_.get());
+	std::unique_ptr<lvk::IContext> ctx(app.ctx_.get());
 
-  const lvk::Dimensions sizeFb = ctx->getDimensions(ctx->getCurrentSwapchainTexture());
+	const lvk::Dimensions sizeFb = ctx->getDimensions(ctx->getCurrentSwapchainTexture());
 
-  const uint32_t kNumSamples         = 8;
-  const lvk::Format kOffscreenFormat = lvk::Format_RGBA_F16;
+	const uint32_t kNumSamples = 8;
+	const lvk::Format kOffscreenFormat = lvk::Format_RGBA_F16;
 
-  // MSAA
-  lvk::Holder<lvk::TextureHandle> msaaColor = ctx->createTexture({
-      .format     = kOffscreenFormat,
-      .dimensions = sizeFb,
-      .numSamples = kNumSamples,
-      .usage      = lvk::TextureUsageBits_Attachment,
-      .storage    = lvk::StorageType_Memoryless,
-      .debugName  = "msaaColor",
-  });
+	// MSAA
+	lvk::Holder<lvk::TextureHandle> msaaColor = ctx->createTexture({
+		.format = kOffscreenFormat,
+		.dimensions = sizeFb,
+		.numSamples = kNumSamples,
+		.usage = lvk::TextureUsageBits_Attachment,
+		.storage = lvk::StorageType_Memoryless,
+		.debugName = "msaaColor",
+	});
 
-  lvk::Holder<lvk::TextureHandle> msaaDepth = ctx->createTexture({
-      .format     = app.getDepthFormat(),
-      .dimensions = sizeFb,
-      .numSamples = kNumSamples,
-      .usage      = lvk::TextureUsageBits_Attachment,
-      .storage    = lvk::StorageType_Memoryless,
-      .debugName  = "msaaDepth",
-  });
+	lvk::Holder<lvk::TextureHandle> msaaDepth = ctx->createTexture({
+		.format = app.getDepthFormat(),
+		.dimensions = sizeFb,
+		.numSamples = kNumSamples,
+		.usage = lvk::TextureUsageBits_Attachment,
+		.storage = lvk::StorageType_Memoryless,
+		.debugName = "msaaDepth",
+	});
 
-  lvk::Holder<lvk::TextureHandle> texOpaqueDepth = ctx->createTexture({
-      .format     = app.getDepthFormat(),
-      .dimensions = sizeFb,
-      .usage      = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
-      .debugName  = "opaqueDepth",
-  });
+	lvk::Holder<lvk::TextureHandle> texOpaqueDepth = ctx->createTexture({
+		.format = app.getDepthFormat(),
+		.dimensions = sizeFb,
+		.usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
+		.debugName = "opaqueDepth",
+	});
 
-  lvk::Holder<lvk::TextureHandle> texOpaqueColor = ctx->createTexture({
-      .format     = kOffscreenFormat,
-      .dimensions = sizeFb,
-      .usage      = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-      .debugName  = "opaqueColor",
-  });
+	lvk::Holder<lvk::TextureHandle> texOpaqueColor = ctx->createTexture({
+		.format = kOffscreenFormat,
+		.dimensions = sizeFb,
+		.usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+		.debugName = "opaqueColor",
+	});
 
-  lvk::Holder<lvk::TextureHandle> texOpaqueColorWithSSAO = ctx->createTexture({
-      .format     = kOffscreenFormat,
-      .dimensions = sizeFb,
-      .usage      = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-      .debugName  = "opaqueColorWithSSAO",
-  });
-  // final HDR scene color (SSAO + OIT)
-  lvk::Holder<lvk::TextureHandle> texSceneColor = ctx->createTexture({
-      .format     = kOffscreenFormat,
-      .dimensions = sizeFb,
-      .usage      = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-      .debugName  = "sceneColor",
-  });
+	lvk::Holder<lvk::TextureHandle> texOpaqueColorWithSSAO = ctx->createTexture({
+		.format = kOffscreenFormat,
+		.dimensions = sizeFb,
+		.usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+		.debugName = "opaqueColorWithSSAO",
+	});
+	// final HDR scene color (SSAO + OIT)
+	lvk::Holder<lvk::TextureHandle> texSceneColor = ctx->createTexture({
+		.format = kOffscreenFormat,
+		.dimensions = sizeFb,
+		.usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+		.debugName = "sceneColor",
+	});
 
-  // HDR light adaptation
-  const lvk::Dimensions sizeBloom = { 512, 512 };
+	// HDR light adaptation
+	const lvk::Dimensions sizeBloom = {512, 512};
 
-  lvk::Holder<lvk::TextureHandle> texBrightPass = ctx->createTexture({
-      .format     = kOffscreenFormat,
-      .dimensions = sizeBloom,
-      .usage      = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-      .debugName  = "texBrightPass",
-  });
-  lvk::Holder<lvk::TextureHandle> texBloomPass  = ctx->createTexture({
-       .format     = kOffscreenFormat,
-       .dimensions = sizeBloom,
-       .usage      = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-       .debugName  = "texBloomPass",
-  });
-  // ping-pong
-  lvk::Holder<lvk::TextureHandle> texBloom[] = {
-    ctx->createTexture({
-        .format     = kOffscreenFormat,
-        .dimensions = sizeBloom,
-        .usage      = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-        .debugName  = "texBloom0",
-    }),
-    ctx->createTexture({
-        .format     = kOffscreenFormat,
-        .dimensions = sizeBloom,
-        .usage      = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-        .debugName  = "texBloom1",
-    }),
-  };
+	lvk::Holder<lvk::TextureHandle> texBrightPass = ctx->createTexture({
+		.format = kOffscreenFormat,
+		.dimensions = sizeBloom,
+		.usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+		.debugName = "texBrightPass",
+	});
+	lvk::Holder<lvk::TextureHandle> texBloomPass = ctx->createTexture({
+		.format = kOffscreenFormat,
+		.dimensions = sizeBloom,
+		.usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+		.debugName = "texBloomPass",
+	});
+	// ping-pong
+	lvk::Holder<lvk::TextureHandle> texBloom[] = {
+		ctx->createTexture({
+			.format = kOffscreenFormat,
+			.dimensions = sizeBloom,
+			.usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+			.debugName = "texBloom0",
+		}),
+		ctx->createTexture({
+			.format = kOffscreenFormat,
+			.dimensions = sizeBloom,
+			.usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+			.debugName = "texBloom1",
+		}),
+	};
 
-  const lvk::ComponentMapping swizzle = { .r = lvk::Swizzle_R, .g = lvk::Swizzle_R, .b = lvk::Swizzle_R, .a = lvk::Swizzle_1 };
+	const lvk::ComponentMapping swizzle = {.r = lvk::Swizzle_R, .g = lvk::Swizzle_R, .b = lvk::Swizzle_R, .a = lvk::Swizzle_1};
 
-  lvk::Holder<lvk::TextureHandle> texLumViews[10] = { ctx->createTexture({
-      .format       = lvk::Format_R_F16,
-      .dimensions   = sizeBloom,
-      .usage        = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-      .numMipLevels = lvk::calcNumMipLevels(sizeBloom.width, sizeBloom.height),
-      .swizzle      = swizzle,
-      .debugName    = "texLuminance",
-  }) };
+	lvk::Holder<lvk::TextureHandle> texLumViews[10] = {ctx->createTexture({
+		.format = lvk::Format_R_F16,
+		.dimensions = sizeBloom,
+		.usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+		.numMipLevels = lvk::calcNumMipLevels(sizeBloom.width, sizeBloom.height),
+		.swizzle = swizzle,
+		.debugName = "texLuminance",
+	})};
 
-  for (uint32_t v = 1; v != LVK_ARRAY_NUM_ELEMENTS(texLumViews); v++) {
-    texLumViews[v] = ctx->createTextureView(texLumViews[0], { .mipLevel = v, .swizzle = swizzle }, "texLumViews[]");
-  }
+	for (uint32_t v = 1; v != LVK_ARRAY_NUM_ELEMENTS(texLumViews); v++)
+	{
+		texLumViews[v] = ctx->createTextureView(texLumViews[0], {.mipLevel = v, .swizzle = swizzle}, "texLumViews[]");
+	}
 
-  const uint16_t brightPixel = glm::packHalf1x16(50.0f);
+	const uint16_t brightPixel = glm::packHalf1x16(50.0f);
 
-  // ping-pong textures for iterative luminance adaptation
-  const lvk::TextureDesc luminanceTextureDesc{
-    .format     = lvk::Format_R_F16,
-    .dimensions = {1, 1},
-    .usage      = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-    .swizzle    = swizzle,
-    .data       = &brightPixel,
-  };
-  lvk::Holder<lvk::TextureHandle> texAdaptedLum[2] = {
-    ctx->createTexture(luminanceTextureDesc, "texAdaptedLuminance0"),
-    ctx->createTexture(luminanceTextureDesc, "texAdaptedLuminance1"),
-  };
-  // shadows
-  lvk::Holder<lvk::TextureHandle> texShadowMap = ctx->createTexture({
-      .type       = lvk::TextureType_2D,
-      .format     = lvk::Format_Z_UN16,
-      .dimensions = { 4096, 4096 },
-      .usage      = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
-      .swizzle    = { .r = lvk::Swizzle_R, .g = lvk::Swizzle_R, .b = lvk::Swizzle_R, .a = lvk::Swizzle_1 },
-      .debugName  = "Shadow map",
-  });
+	// ping-pong textures for iterative luminance adaptation
+	const lvk::TextureDesc luminanceTextureDesc{
+		.format = lvk::Format_R_F16,
+		.dimensions = {1, 1},
+		.usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+		.swizzle = swizzle,
+		.data = &brightPixel,
+	};
+	lvk::Holder<lvk::TextureHandle> texAdaptedLum[2] = {
+		ctx->createTexture(luminanceTextureDesc, "texAdaptedLuminance0"),
+		ctx->createTexture(luminanceTextureDesc, "texAdaptedLuminance1"),
+	};
+	// shadows
+	lvk::Holder<lvk::TextureHandle> texShadowMap = ctx->createTexture({
+		.type = lvk::TextureType_2D,
+		.format = lvk::Format_Z_UN16,
+		.dimensions = {4096, 4096},
+		.usage = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
+		.swizzle = {.r = lvk::Swizzle_R, .g = lvk::Swizzle_R, .b = lvk::Swizzle_R, .a = lvk::Swizzle_1},
+		.debugName = "Shadow map",
+	});
 
-  lvk::Holder<lvk::SamplerHandle> samplerShadow = ctx->createSampler({
-      .wrapU               = lvk::SamplerWrap_Clamp,
-      .wrapV               = lvk::SamplerWrap_Clamp,
-      .depthCompareOp      = lvk::CompareOp_LessEqual,
-      .depthCompareEnabled = true,
-      .debugName           = "Sampler: shadow",
-  });
+	lvk::Holder<lvk::SamplerHandle> samplerShadow = ctx->createSampler({
+		.wrapU = lvk::SamplerWrap_Clamp,
+		.wrapV = lvk::SamplerWrap_Clamp,
+		.depthCompareOp = lvk::CompareOp_LessEqual,
+		.depthCompareEnabled = true,
+		.debugName = "Sampler: shadow",
+	});
 
-  struct LightData {
-    mat4 viewProjBias;
-    vec4 lightDir;
-    uint32_t shadowTexture;
-    uint32_t shadowSampler;
-  };
-  lvk::Holder<lvk::BufferHandle> bufferLight = ctx->createBuffer({
-      .usage     = lvk::BufferUsageBits_Storage,
-      .storage   = lvk::StorageType_Device,
-      .size      = sizeof(LightData),
-      .debugName = "Buffer: light",
-  });
+	struct LightData
+	{
+		mat4 viewProjBias;
+		vec4 lightDir;
+		uint32_t shadowTexture;
+		uint32_t shadowSampler;
+	};
+	lvk::Holder<lvk::BufferHandle> bufferLight = ctx->createBuffer({
+		.usage = lvk::BufferUsageBits_Storage,
+		.storage = lvk::StorageType_Device,
+		.size = sizeof(LightData),
+		.debugName = "Buffer: light",
+	});
 
-  lvk::Holder<lvk::TextureHandle> texSSAO                = ctx->createTexture({
-                     .format     = ctx->getSwapchainFormat(),
-                     .dimensions = ctx->getDimensions(ctx->getCurrentSwapchainTexture()),
-                     .usage      = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-                     .debugName  = "texSSAO",
-  });
-  lvk::Holder<lvk::TextureHandle> texBlur[]              = {
-    ctx->createTexture({
-                     .format     = ctx->getSwapchainFormat(),
-                     .dimensions = ctx->getDimensions(ctx->getCurrentSwapchainTexture()),
-                     .usage      = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-                     .debugName  = "texBlur0",
-    }),
-    ctx->createTexture({
-                     .format     = ctx->getSwapchainFormat(),
-                     .dimensions = ctx->getDimensions(ctx->getCurrentSwapchainTexture()),
-                     .usage      = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
-                     .debugName  = "texBlur1",
-    }),
-  };
+	lvk::Holder<lvk::TextureHandle> texSSAO = ctx->createTexture({
+		.format = ctx->getSwapchainFormat(),
+		.dimensions = ctx->getDimensions(ctx->getCurrentSwapchainTexture()),
+		.usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+		.debugName = "texSSAO",
+	});
+	lvk::Holder<lvk::TextureHandle> texBlur[] = {
+		ctx->createTexture({
+			.format = ctx->getSwapchainFormat(),
+			.dimensions = ctx->getDimensions(ctx->getCurrentSwapchainTexture()),
+			.usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+			.debugName = "texBlur0",
+		}),
+		ctx->createTexture({
+			.format = ctx->getSwapchainFormat(),
+			.dimensions = ctx->getDimensions(ctx->getCurrentSwapchainTexture()),
+			.usage = lvk::TextureUsageBits_Sampled | lvk::TextureUsageBits_Storage,
+			.debugName = "texBlur1",
+		}),
+	};
 
-  lvk::Holder<lvk::SamplerHandle> samplerClamp = ctx->createSampler({
-      .wrapU = lvk::SamplerWrap_Clamp,
-      .wrapV = lvk::SamplerWrap_Clamp,
-      .wrapW = lvk::SamplerWrap_Clamp,
-  });
+	lvk::Holder<lvk::SamplerHandle> samplerClamp = ctx->createSampler({
+		.wrapU = lvk::SamplerWrap_Clamp,
+		.wrapV = lvk::SamplerWrap_Clamp,
+		.wrapW = lvk::SamplerWrap_Clamp,
+	});
 
-  const Skybox skyBox(
-      ctx, "../../data/immenstadter_horn_2k_prefilter.ktx", "../../data/immenstadter_horn_2k_irradiance.ktx", kOffscreenFormat, app.getDepthFormat(),
-      kNumSamples);
-  VKMesh11Lazy mesh(ctx, meshData, scene);
-  const VKPipeline11 pipelineOpaque(
-      ctx, meshData.streams, kOffscreenFormat, app.getDepthFormat(), kNumSamples,
-      loadShaderModule(ctx, "../../src/shaders/main.vert"), loadShaderModule(ctx, "../../src/shaders/oit/opaque.frag"));
-  const VKPipeline11 pipelineTransparent(
-      ctx, meshData.streams, kOffscreenFormat, app.getDepthFormat(), kNumSamples,
-      loadShaderModule(ctx, "../../src/shaders/main.vert"), loadShaderModule(ctx, "../../src/shaders/oit/transparent.frag"));
-  const VKPipeline11 pipelineShadow(
-      ctx, meshData.streams, lvk::Format_Invalid, ctx->getFormat(texShadowMap), 1,
-      loadShaderModule(ctx, "../../src/shaders/directional_shadow/shadow.vert"),
-      loadShaderModule(ctx, "../../src/shaders/directional_shadow/shadow.frag"));
+	const Skybox skyBox(
+		ctx, "../../data/immenstadter_horn_2k_prefilter.ktx", "../../data/immenstadter_horn_2k_irradiance.ktx", kOffscreenFormat, app.getDepthFormat(),
+		kNumSamples);
+	VKMesh11Lazy mesh(ctx, meshData, scene);
+	const VKPipeline11 pipelineOpaque(
+		ctx, meshData.streams, kOffscreenFormat, app.getDepthFormat(), kNumSamples,
+		loadShaderModule(ctx, "../../src/shaders/main.vert"), loadShaderModule(ctx, "../../src/shaders/oit/opaque.frag"));
+	const VKPipeline11 pipelineTransparent(
+		ctx, meshData.streams, kOffscreenFormat, app.getDepthFormat(), kNumSamples,
+		loadShaderModule(ctx, "../../src/shaders/main.vert"), loadShaderModule(ctx, "../../src/shaders/oit/transparent.frag"));
+	const VKPipeline11 pipelineShadow(
+		ctx, meshData.streams, lvk::Format_Invalid, ctx->getFormat(texShadowMap), 1,
+		loadShaderModule(ctx, "../../src/shaders/directional_shadow/shadow.vert"),
+		loadShaderModule(ctx, "../../src/shaders/directional_shadow/shadow.frag"));
 
-  lvk::Holder<lvk::ShaderModuleHandle> vertOIT       = loadShaderModule(ctx, "../../src/shaders/util/QuadFlip.vert");
-  lvk::Holder<lvk::ShaderModuleHandle> fragOIT       = loadShaderModule(ctx, "../../src/shaders/oit/oit.frag");
-  lvk::Holder<lvk::RenderPipelineHandle> pipelineOIT = ctx->createRenderPipeline({
-      .smVert = vertOIT,
-      .smFrag = fragOIT,
-      .color  = { { .format = kOffscreenFormat } },
-  });
+	lvk::Holder<lvk::ShaderModuleHandle> vertOIT = loadShaderModule(ctx, "../../src/shaders/util/QuadFlip.vert");
+	lvk::Holder<lvk::ShaderModuleHandle> fragOIT = loadShaderModule(ctx, "../../src/shaders/oit/oit.frag");
+	lvk::Holder<lvk::RenderPipelineHandle> pipelineOIT = ctx->createRenderPipeline({
+		.smVert = vertOIT,
+		.smFrag = fragOIT,
+		.color = {{.format = kOffscreenFormat}},
+	});
 
-  lvk::Holder<lvk::ShaderModuleHandle> compBrightPass        = loadShaderModule(ctx, "../../src/shaders/hdr/BrightPass.comp");
-  lvk::Holder<lvk::ComputePipelineHandle> pipelineBrightPass = ctx->createComputePipeline({ .smComp = compBrightPass });
+	lvk::Holder<lvk::ShaderModuleHandle> compBrightPass = loadShaderModule(ctx, "../../src/shaders/hdr/BrightPass.comp");
+	lvk::Holder<lvk::ComputePipelineHandle> pipelineBrightPass = ctx->createComputePipeline({.smComp = compBrightPass});
 
-  lvk::Holder<lvk::ShaderModuleHandle> compAdaptationPass        = loadShaderModule(ctx, "../../src/shaders/hdr/Adaptation.comp");
-  lvk::Holder<lvk::ComputePipelineHandle> pipelineAdaptationPass = ctx->createComputePipeline({ .smComp = compAdaptationPass });
+	lvk::Holder<lvk::ShaderModuleHandle> compAdaptationPass = loadShaderModule(ctx, "../../src/shaders/hdr/Adaptation.comp");
+	lvk::Holder<lvk::ComputePipelineHandle> pipelineAdaptationPass = ctx->createComputePipeline({.smComp = compAdaptationPass});
 
-  const uint32_t kHorizontal = 1;
-  const uint32_t kVertical   = 0;
+	const uint32_t kHorizontal = 1;
+	const uint32_t kVertical = 0;
 
-  lvk::Holder<lvk::ShaderModuleHandle> compBloomPass     = loadShaderModule(ctx, "../../src/shaders/hdr/Bloom.comp");
-  lvk::Holder<lvk::ComputePipelineHandle> pipelineBloomX = ctx->createComputePipeline({
-      .smComp   = compBloomPass,
-      .specInfo = {.entries = { { .constantId = 0, .size = sizeof(uint32_t) } }, .data = &kHorizontal, .dataSize = sizeof(uint32_t)},
-  });
-  lvk::Holder<lvk::ComputePipelineHandle> pipelineBloomY = ctx->createComputePipeline({
-      .smComp   = compBloomPass,
-      .specInfo = {.entries = { { .constantId = 0, .size = sizeof(uint32_t) } }, .data = &kVertical, .dataSize = sizeof(uint32_t)},
-  });
+	lvk::Holder<lvk::ShaderModuleHandle> compBloomPass = loadShaderModule(ctx, "../../src/shaders/hdr/Bloom.comp");
+	lvk::Holder<lvk::ComputePipelineHandle> pipelineBloomX = ctx->createComputePipeline({
+		.smComp = compBloomPass,
+		.specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}}, .data = &kHorizontal, .dataSize = sizeof(uint32_t)},
+	});
+	lvk::Holder<lvk::ComputePipelineHandle> pipelineBloomY = ctx->createComputePipeline({
+		.smComp = compBloomPass,
+		.specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}}, .data = &kVertical, .dataSize = sizeof(uint32_t)},
+	});
 
-  lvk::Holder<lvk::ShaderModuleHandle> vertToneMap = loadShaderModule(ctx, "../../src/shaders/util/QuadFlip.vert");
-  lvk::Holder<lvk::ShaderModuleHandle> fragToneMap = loadShaderModule(ctx, "../../src/shaders/hdr/ToneMap.frag");
+	lvk::Holder<lvk::ShaderModuleHandle> vertToneMap = loadShaderModule(ctx, "../../src/shaders/util/QuadFlip.vert");
+	lvk::Holder<lvk::ShaderModuleHandle> fragToneMap = loadShaderModule(ctx, "../../src/shaders/hdr/ToneMap.frag");
 
-  lvk::Holder<lvk::RenderPipelineHandle> pipelineToneMap = ctx->createRenderPipeline({
-      .smVert = vertToneMap,
-      .smFrag = fragToneMap,
-      .color  = { { .format = ctx->getSwapchainFormat() } },
-  });
+	lvk::Holder<lvk::RenderPipelineHandle> pipelineToneMap = ctx->createRenderPipeline({
+		.smVert = vertToneMap,
+		.smFrag = fragToneMap,
+		.color = {{.format = ctx->getSwapchainFormat()}},
+	});
 
-  lvk::Holder<lvk::ShaderModuleHandle> compSSAO        = loadShaderModule(ctx, "../../src/shaders/ibl/SSAO.comp");
-  lvk::Holder<lvk::ComputePipelineHandle> pipelineSSAO = ctx->createComputePipeline({
-      .smComp = compSSAO,
-  });
+	lvk::Holder<lvk::ShaderModuleHandle> compSSAO = loadShaderModule(ctx, "../../src/shaders/ibl/SSAO.comp");
+	lvk::Holder<lvk::ComputePipelineHandle> pipelineSSAO = ctx->createComputePipeline({
+		.smComp = compSSAO,
+	});
 
-  // SSAO
-  lvk::Holder<lvk::TextureHandle> texRotations = loadTexture(ctx, "../../data/rot_texture.bmp");
+	// SSAO
+	lvk::Holder<lvk::TextureHandle> texRotations = loadTexture(ctx, "../../data/rot_texture.bmp");
 
-  lvk::Holder<lvk::ShaderModuleHandle> compBlur         = loadShaderModule(ctx, "../../src/shaders/util/Blur.comp");
-  lvk::Holder<lvk::ComputePipelineHandle> pipelineBlurX = ctx->createComputePipeline({
-      .smComp   = compBlur,
-      .specInfo = {.entries = { { .constantId = 0, .size = sizeof(uint32_t) } }, .data = &kHorizontal, .dataSize = sizeof(uint32_t)},
-  });
-  lvk::Holder<lvk::ComputePipelineHandle> pipelineBlurY = ctx->createComputePipeline({
-      .smComp   = compBlur,
-      .specInfo = {.entries = { { .constantId = 0, .size = sizeof(uint32_t) } }, .data = &kVertical, .dataSize = sizeof(uint32_t)},
-  });
+	lvk::Holder<lvk::ShaderModuleHandle> compBlur = loadShaderModule(ctx, "../../src/shaders/util/Blur.comp");
+	lvk::Holder<lvk::ComputePipelineHandle> pipelineBlurX = ctx->createComputePipeline({
+		.smComp = compBlur,
+		.specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}}, .data = &kHorizontal, .dataSize = sizeof(uint32_t)},
+	});
+	lvk::Holder<lvk::ComputePipelineHandle> pipelineBlurY = ctx->createComputePipeline({
+		.smComp = compBlur,
+		.specInfo = {.entries = {{.constantId = 0, .size = sizeof(uint32_t)}}, .data = &kVertical, .dataSize = sizeof(uint32_t)},
+	});
 
-  lvk::Holder<lvk::ShaderModuleHandle> vertCombine       = loadShaderModule(ctx, "../../src/shaders/util/QuadFlip.vert");
-  lvk::Holder<lvk::ShaderModuleHandle> fragCombine       = loadShaderModule(ctx, "../../src/shaders/ibl/combine.frag");
-  lvk::Holder<lvk::RenderPipelineHandle> pipelineCombineSSAO = ctx->createRenderPipeline({
-      .smVert = vertCombine,
-      .smFrag = fragCombine,
-      .color  = { { .format = kOffscreenFormat } },
-  });
+	lvk::Holder<lvk::ShaderModuleHandle> vertCombine = loadShaderModule(ctx, "../../src/shaders/util/QuadFlip.vert");
+	lvk::Holder<lvk::ShaderModuleHandle> fragCombine = loadShaderModule(ctx, "../../src/shaders/ibl/combine.frag");
+	lvk::Holder<lvk::RenderPipelineHandle> pipelineCombineSSAO = ctx->createRenderPipeline({
+		.smVert = vertCombine,
+		.smFrag = fragCombine,
+		.color = {{.format = kOffscreenFormat}},
+	});
 
-  lvk::Holder<lvk::ShaderModuleHandle> compCulling        = loadShaderModule(ctx, "../../src/shaders/culling/FrustumCulling.comp");
-  lvk::Holder<lvk::ComputePipelineHandle> pipelineCulling = ctx->createComputePipeline({
-      .smComp = compCulling,
-  });
+	lvk::Holder<lvk::ShaderModuleHandle> compCulling = loadShaderModule(ctx, "../../src/shaders/culling/FrustumCulling.comp");
+	lvk::Holder<lvk::ComputePipelineHandle> pipelineCulling = ctx->createComputePipeline({
+		.smComp = compCulling,
+	});
 
-  app.addKeyCallback([](GLFWwindow* window, int key, int scancode, int action, int mods) {
+	app.addKeyCallback([](GLFWwindow *window, int key, int scancode, int action, int mods)
+					   {
     const bool pressed = action != GLFW_RELEASE;
     if (!pressed || ImGui::GetIO().WantCaptureKeyboard)
       return;
@@ -342,212 +347,225 @@ int main()
     if (key == GLFW_KEY_C)
       cullingMode = CullingMode_CPU;
     if (key == GLFW_KEY_G)
-      cullingMode = CullingMode_GPU;
-  });
+      cullingMode = CullingMode_GPU; });
 
-  // pretransform bounding boxes to world space
-  std::vector<BoundingBox> reorderedBoxes;
-  reorderedBoxes.resize(scene.globalTransform.size());
-  for (auto& p : scene.meshForNode) {
-    reorderedBoxes[p.first] = meshData.boxes[p.second].getTransformed(scene.globalTransform[p.first]);
-  }
+	// pretransform bounding boxes to world space
+	std::vector<BoundingBox> reorderedBoxes;
+	reorderedBoxes.resize(scene.globalTransform.size());
+	for (auto &p : scene.meshForNode)
+	{
+		reorderedBoxes[p.first] = meshData.boxes[p.second].getTransformed(scene.globalTransform[p.first]);
+	}
 
-  lvk::Holder<lvk::BufferHandle> bufferAABBs = ctx->createBuffer({
-      .usage     = lvk::BufferUsageBits_Storage,
-      .storage   = lvk::StorageType_Device,
-      .size      = reorderedBoxes.size() * sizeof(BoundingBox),
-      .data      = reorderedBoxes.data(),
-      .debugName = "Buffer: AABBs",
-  });
+	lvk::Holder<lvk::BufferHandle> bufferAABBs = ctx->createBuffer({
+		.usage = lvk::BufferUsageBits_Storage,
+		.storage = lvk::StorageType_Device,
+		.size = reorderedBoxes.size() * sizeof(BoundingBox),
+		.data = reorderedBoxes.data(),
+		.debugName = "Buffer: AABBs",
+	});
 
-  // create the scene AABB in world space
-  BoundingBox bigBoxWS = reorderedBoxes.front();
-  for (const auto& b : reorderedBoxes) {
-    bigBoxWS.combinePoint(b.min_);
-    bigBoxWS.combinePoint(b.max_);
-  }
+	// create the scene AABB in world space
+	BoundingBox bigBoxWS = reorderedBoxes.front();
+	for (const auto &b : reorderedBoxes)
+	{
+		bigBoxWS.combinePoint(b.min_);
+		bigBoxWS.combinePoint(b.max_);
+	}
 
-  struct CullingData {
-    vec4 frustumPlanes[6];
-    vec4 frustumCorners[8];
-    uint32_t numMeshesToCull  = 0;
-    uint32_t numVisibleMeshes = 0; // GPU
-  } emptyCullingData;
+	struct CullingData
+	{
+		vec4 frustumPlanes[6];
+		vec4 frustumCorners[8];
+		uint32_t numMeshesToCull = 0;
+		uint32_t numVisibleMeshes = 0; // GPU
+	} emptyCullingData;
 
-  int numVisibleMeshes = 0; // CPU
+	int numVisibleMeshes = 0; // CPU
 
-  // round-robin
-  const lvk::BufferDesc cullingDataDesc = {
-    .usage     = lvk::BufferUsageBits_Storage,
-    .storage   = lvk::StorageType_HostVisible,
-    .size      = sizeof(CullingData),
-    .data      = &emptyCullingData,
-    .debugName = "Buffer: CullingData 0",
-  };
-  lvk::Holder<lvk::BufferHandle> bufferCullingData[] = {
-    ctx->createBuffer(cullingDataDesc, "Buffer: CullingData 0"),
-    ctx->createBuffer(cullingDataDesc, "Buffer: CullingData 1"),
-  };
-  lvk::SubmitHandle submitHandle[LVK_ARRAY_NUM_ELEMENTS(bufferCullingData)] = {};
+	// round-robin
+	const lvk::BufferDesc cullingDataDesc = {
+		.usage = lvk::BufferUsageBits_Storage,
+		.storage = lvk::StorageType_HostVisible,
+		.size = sizeof(CullingData),
+		.data = &emptyCullingData,
+		.debugName = "Buffer: CullingData 0",
+	};
+	lvk::Holder<lvk::BufferHandle> bufferCullingData[] = {
+		ctx->createBuffer(cullingDataDesc, "Buffer: CullingData 0"),
+		ctx->createBuffer(cullingDataDesc, "Buffer: CullingData 1"),
+	};
+	lvk::SubmitHandle submitHandle[LVK_ARRAY_NUM_ELEMENTS(bufferCullingData)] = {};
 
-  uint32_t currentBufferId = 0; // for culling stats
+	uint32_t currentBufferId = 0; // for culling stats
 
-  struct {
-    uint64_t commands;
-    uint64_t drawData;
-    uint64_t AABBs;
-    uint64_t meshes;
-  } pcCulling = {
-    .commands = 0,
-    .drawData = ctx->gpuAddress(mesh.bufferDrawData_),
-    .AABBs    = ctx->gpuAddress(bufferAABBs),
-  };
+	struct
+	{
+		uint64_t commands;
+		uint64_t drawData;
+		uint64_t AABBs;
+		uint64_t meshes;
+	} pcCulling = {
+		.commands = 0,
+		.drawData = ctx->gpuAddress(mesh.bufferDrawData_),
+		.AABBs = ctx->gpuAddress(bufferAABBs),
+	};
 
-  VKIndirectBuffer11 meshesOpaque(ctx, mesh.numMeshes_, lvk::StorageType_HostVisible);
-  VKIndirectBuffer11 meshesTransparent(ctx, mesh.numMeshes_, lvk::StorageType_HostVisible);
+	VKIndirectBuffer11 meshesOpaque(ctx, mesh.numMeshes_, lvk::StorageType_HostVisible);
+	VKIndirectBuffer11 meshesTransparent(ctx, mesh.numMeshes_, lvk::StorageType_HostVisible);
 
-  auto isTransparent = [&meshData, &mesh](const DrawIndexedIndirectCommand& c) -> bool {
-    const uint32_t mtlIndex = mesh.drawData_[c.baseInstance].materialId;
-    const Material& mtl     = meshData.materials[mtlIndex];
-    return (mtl.flags & sMaterialFlags_Transparent) > 0;
-  };
+	auto isTransparent = [&meshData, &mesh](const DrawIndexedIndirectCommand &c) -> bool
+	{
+		const uint32_t mtlIndex = mesh.drawData_[c.baseInstance].materialId;
+		const Material &mtl = meshData.materials[mtlIndex];
+		return (mtl.flags & sMaterialFlags_Transparent) > 0;
+	};
 
-  mesh.indirectBuffer_.selectTo(meshesOpaque, [&isTransparent](const DrawIndexedIndirectCommand& c) -> bool { return !isTransparent(c); });
-  mesh.indirectBuffer_.selectTo(
-      meshesTransparent, [&isTransparent](const DrawIndexedIndirectCommand& c) -> bool { return isTransparent(c); });
+	mesh.indirectBuffer_.selectTo(meshesOpaque, [&isTransparent](const DrawIndexedIndirectCommand &c) -> bool
+								  { return !isTransparent(c); });
+	mesh.indirectBuffer_.selectTo(
+		meshesTransparent, [&isTransparent](const DrawIndexedIndirectCommand &c) -> bool
+		{ return isTransparent(c); });
 
-  struct TransparentFragment {
-    uint64_t rgba; // f16vec4
-    float depth;
-    uint32_t next;
-  };
+	struct TransparentFragment
+	{
+		uint64_t rgba; // f16vec4
+		float depth;
+		uint32_t next;
+	};
 
-  const uint32_t kMaxOITFragments = sizeFb.width * sizeFb.height * kNumSamples;
+	const uint32_t kMaxOITFragments = sizeFb.width * sizeFb.height * kNumSamples;
 
-  lvk::Holder<lvk::BufferHandle> bufferAtomicCounter = ctx->createBuffer({
-      .usage     = lvk::BufferUsageBits_Storage,
-      .storage   = lvk::StorageType_Device,
-      .size      = sizeof(uint32_t),
-      .debugName = "Buffer: atomic counter",
-  });
+	lvk::Holder<lvk::BufferHandle> bufferAtomicCounter = ctx->createBuffer({
+		.usage = lvk::BufferUsageBits_Storage,
+		.storage = lvk::StorageType_Device,
+		.size = sizeof(uint32_t),
+		.debugName = "Buffer: atomic counter",
+	});
 
-  lvk::Holder<lvk::BufferHandle> bufferListsOIT = ctx->createBuffer({
-      .usage     = lvk::BufferUsageBits_Storage,
-      .storage   = lvk::StorageType_Device,
-      .size      = sizeof(TransparentFragment) * kMaxOITFragments,
-      .debugName = "Buffer: transparency lists",
-  });
+	lvk::Holder<lvk::BufferHandle> bufferListsOIT = ctx->createBuffer({
+		.usage = lvk::BufferUsageBits_Storage,
+		.storage = lvk::StorageType_Device,
+		.size = sizeof(TransparentFragment) * kMaxOITFragments,
+		.debugName = "Buffer: transparency lists",
+	});
 
-  lvk::Holder<lvk::TextureHandle> texHeadsOIT = ctx->createTexture({
-      .format     = lvk::Format_R_UI32,
-      .dimensions = sizeFb,
-      .usage      = lvk::TextureUsageBits_Storage,
-      .debugName  = "oitHeads",
-  });
+	lvk::Holder<lvk::TextureHandle> texHeadsOIT = ctx->createTexture({
+		.format = lvk::Format_R_UI32,
+		.dimensions = sizeFb,
+		.usage = lvk::TextureUsageBits_Storage,
+		.debugName = "oitHeads",
+	});
 
-  const struct OITBuffer {
-    uint64_t bufferAtomicCounter;
-    uint64_t bufferTransparencyLists;
-    uint32_t texHeadsOIT;
-    uint32_t maxOITFragments;
-  } oitBufferData = {
-    .bufferAtomicCounter     = ctx->gpuAddress(bufferAtomicCounter),
-    .bufferTransparencyLists = ctx->gpuAddress(bufferListsOIT),
-    .texHeadsOIT             = texHeadsOIT.index(),
-    .maxOITFragments         = kMaxOITFragments,
-  };
+	const struct OITBuffer
+	{
+		uint64_t bufferAtomicCounter;
+		uint64_t bufferTransparencyLists;
+		uint32_t texHeadsOIT;
+		uint32_t maxOITFragments;
+	} oitBufferData = {
+		.bufferAtomicCounter = ctx->gpuAddress(bufferAtomicCounter),
+		.bufferTransparencyLists = ctx->gpuAddress(bufferListsOIT),
+		.texHeadsOIT = texHeadsOIT.index(),
+		.maxOITFragments = kMaxOITFragments,
+	};
 
-  lvk::Holder<lvk::BufferHandle> bufferOIT = ctx->createBuffer({
-      .usage     = lvk::BufferUsageBits_Storage,
-      .storage   = lvk::StorageType_Device,
-      .size      = sizeof(oitBufferData),
-      .data      = &oitBufferData,
-      .debugName = "Buffer: OIT",
-  });
+	lvk::Holder<lvk::BufferHandle> bufferOIT = ctx->createBuffer({
+		.usage = lvk::BufferUsageBits_Storage,
+		.storage = lvk::StorageType_Device,
+		.size = sizeof(oitBufferData),
+		.data = &oitBufferData,
+		.debugName = "Buffer: OIT",
+	});
 
-  // update shadow map
-  LightParams prevLight = { .depthBiasConst = 0 };
+	// update shadow map
+	LightParams prevLight = {.depthBiasConst = 0};
 
-  // clang-format off
+	// clang-format off
   const mat4 scaleBias = mat4(0.5, 0.0, 0.0, 0.0,
                               0.0, 0.5, 0.0, 0.0,
                               0.0, 0.0, 1.0, 0.0,
                               0.5, 0.5, 0.0, 1.0);
-  // clang-format on
+	// clang-format on
 
-  auto clearTransparencyBuffers = [&bufferAtomicCounter, &texHeadsOIT, sizeFb](lvk::ICommandBuffer& buf) {
-    buf.cmdClearColorImage(texHeadsOIT, { .uint32 = { 0xffffffff } });
-    buf.cmdFillBuffer(bufferAtomicCounter, 0, sizeof(uint32_t), 0);
-  };
+	auto clearTransparencyBuffers = [&bufferAtomicCounter, &texHeadsOIT, sizeFb](lvk::ICommandBuffer &buf)
+	{
+		buf.cmdClearColorImage(texHeadsOIT, {.uint32 = {0xffffffff}});
+		buf.cmdFillBuffer(bufferAtomicCounter, 0, sizeof(uint32_t), 0);
+	};
 
-  struct {
-    uint32_t texDepth;
-    uint32_t texRotation;
-    uint32_t texOut;
-    uint32_t sampler;
-    float zNear;
-    float zFar;
-    float radius;
-    float attScale;
-    float distScale;
-  } pcSSAO = {
-    .texDepth    = texOpaqueDepth.index(),
-    .texRotation = texRotations.index(),
-    .texOut      = texSSAO.index(),
-    .sampler     = samplerClamp.index(),
-    .zNear       = 0.01f,
-    .zFar        = 200.0f,
-    .radius      = 0.01f,
-    .attScale    = 0.95f,
-    .distScale   = 1.7f,
-  };
+	struct
+	{
+		uint32_t texDepth;
+		uint32_t texRotation;
+		uint32_t texOut;
+		uint32_t sampler;
+		float zNear;
+		float zFar;
+		float radius;
+		float attScale;
+		float distScale;
+	} pcSSAO = {
+		.texDepth = texOpaqueDepth.index(),
+		.texRotation = texRotations.index(),
+		.texOut = texSSAO.index(),
+		.sampler = samplerClamp.index(),
+		.zNear = 0.01f,
+		.zFar = 200.0f,
+		.radius = 0.01f,
+		.attScale = 0.95f,
+		.distScale = 1.7f,
+	};
 
-  struct {
-    uint32_t texColor;
-    uint32_t texSSAO;
-    uint32_t sampler;
-    float scale;
-    float bias;
-  } pcCombineSSAO = {
-    .texColor = texOpaqueColor.index(),
-    .texSSAO  = texSSAO.index(),
-    .sampler  = samplerClamp.index(),
-    .scale    = 1.1f,
-    .bias     = 0.1f,
-  };
+	struct
+	{
+		uint32_t texColor;
+		uint32_t texSSAO;
+		uint32_t sampler;
+		float scale;
+		float bias;
+	} pcCombineSSAO = {
+		.texColor = texOpaqueColor.index(),
+		.texSSAO = texSSAO.index(),
+		.sampler = samplerClamp.index(),
+		.scale = 1.1f,
+		.bias = 0.1f,
+	};
 
-  struct {
-    uint32_t texColor;
-    uint32_t texLuminance;
-    uint32_t texBloom;
-    uint32_t sampler;
-    int drawMode = ToneMapping_Uchimura;
+	struct
+	{
+		uint32_t texColor;
+		uint32_t texLuminance;
+		uint32_t texBloom;
+		uint32_t sampler;
+		int drawMode = ToneMapping_Uchimura;
 
-    float exposure      = 0.95f;
-    float bloomStrength = 0.0f;
+		float exposure = 0.95f;
+		float bloomStrength = 0.0f;
 
-    // Reinhard
-    float maxWhite = 1.0f;
+		// Reinhard
+		float maxWhite = 1.0f;
 
-    // Uchimura
-    float P = 1.0f;  // max display brightness
-    float a = 1.05f; // contrast
-    float m = 0.1f;  // linear section start
-    float l = 0.8f;  // linear section length
-    float c = 3.0f;  // black tightness
-    float b = 0.0f;  // pedestal
+		// Uchimura
+		float P = 1.0f;	 // max display brightness
+		float a = 1.05f; // contrast
+		float m = 0.1f;	 // linear section start
+		float l = 0.8f;	 // linear section length
+		float c = 3.0f;	 // black tightness
+		float b = 0.0f;	 // pedestal
 
-    // Khronos PBR
-    float startCompression = 0.8f;  // highlight compression start
-    float desaturation     = 0.15f; // desaturation speed
-  } pcHDR = {
-    .texColor     = texSceneColor.index(),
-    .texLuminance = texAdaptedLum[0].index(), // 1x1
-    .texBloom     = texBloomPass.index(),
-    .sampler      = samplerClamp.index(),
-  };
+		// Khronos PBR
+		float startCompression = 0.8f; // highlight compression start
+		float desaturation = 0.15f;	   // desaturation speed
+	} pcHDR = {
+		.texColor = texSceneColor.index(),
+		.texLuminance = texAdaptedLum[0].index(), // 1x1
+		.texBloom = texBloomPass.index(),
+		.sampler = samplerClamp.index(),
+	};
 
-  app.run([&](uint32_t width, uint32_t height, float aspectRatio, float deltaSeconds) {
+	app.run([&](uint32_t width, uint32_t height, float aspectRatio, float deltaSeconds)
+			{
     mesh.processLoadedTextures();
 
     const mat4 view = app.camera_.getViewMatrix();
@@ -1089,10 +1107,9 @@ int main()
     }
 
     // swap ping-pong textures
-    std::swap(texAdaptedLum[0], texAdaptedLum[1]);
-  });
+    std::swap(texAdaptedLum[0], texAdaptedLum[1]); });
 
-  ctx.release();
+	ctx.release();
 
-  return 0;
+	return 0;
 }

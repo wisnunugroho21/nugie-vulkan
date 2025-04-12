@@ -61,7 +61,8 @@ public:
 
 		isDraggingActive_ = keyPressed;
 
-		if (!keyPressed) return glm::mat4(1.0f);
+		if (!keyPressed)
+			return glm::mat4(1.0f);
 
 		pointCur_ = projectOnSphere(screenPoint);
 
@@ -72,7 +73,7 @@ public:
 
 		if (shift > std::numeric_limits<float>::epsilon())
 		{
-			const glm::vec3 axis = glm::cross( pointPrev_, pointCur_);
+			const glm::vec3 axis = glm::cross(pointPrev_, pointCur_);
 			rotMatrix = glm::rotate(glm::mat4(1.0f), shift * speed, axis);
 		}
 
@@ -81,7 +82,7 @@ public:
 		return rotMatrix;
 	}
 
-	const glm::mat4& getRotationDelta() const
+	const glm::mat4 &getRotationDelta() const
 	{
 		return rotationDelta_;
 	};
@@ -100,7 +101,7 @@ private:
 		rotation_ = rotation_ * rotationDelta_;
 		rotationDelta_ = glm::mat4(1.0f);
 		pointCur_ = projectOnSphere(screenPoint);
-		pointPrev_ = pointCur_;		
+		pointPrev_ = pointCur_;
 	}
 
 	glm::vec3 projectOnSphere(glm::vec2 ScreenPoint)
@@ -109,8 +110,7 @@ private:
 		glm::vec3 proj(
 			+(2.0f * ScreenPoint.x - 1.0f),
 			-(2.0f * ScreenPoint.y - 1.0f),
-			0.0f
-		);
+			0.0f);
 
 		const float Length = std::min(glm::length(proj), 1.0f);
 
@@ -118,6 +118,7 @@ private:
 
 		return glm::normalize(proj);
 	}
+	
 	glm::vec3 pointCur_ = glm::vec3(0.0f);
 	glm::vec3 pointPrev_ = glm::vec3(0.0f);
 	glm::mat4 rotation_ = glm::mat4(1.0f);
