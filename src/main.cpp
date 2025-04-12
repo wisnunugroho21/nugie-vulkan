@@ -41,7 +41,7 @@ int main()
     std::unique_ptr<lvk::IContext> ctx(app.ctx_.get());
 
     const lvk::Dimensions sizeFb = ctx->getDimensions(ctx->getCurrentSwapchainTexture());
-    const uint32_t kNumSamples = 4;
+    const uint32_t kNumSamples = 2;
 
     lvk::Holder<lvk::TextureHandle> msaaColor = ctx->createTexture({
         .format = ctx->getSwapchainFormat(),
@@ -131,6 +131,10 @@ int main()
         .AABBs = ctx->gpuAddress(bufferAABBs),
     };
 
+    CullingData cullingData = {
+        .numMeshesToCull = static_cast<uint32_t>(scene.meshForNode.size())
+    };
+
     app.run([&](uint32_t width, uint32_t height, float aspectRatio, float deltaSeconds) {
         const mat4 view = app.camera_.getViewMatrix();
         const mat4 proj = glm::perspective(45.0f, aspectRatio, 0.1f, 200.0f);
@@ -140,10 +144,6 @@ int main()
             // 0. Cull scene
             if (!freezeCullingView)
                 cullingView = app.camera_.getViewMatrix();
-
-            CullingData cullingData = {
-                .numMeshesToCull = static_cast<uint32_t>(scene.meshForNode.size()),
-            };
 
             getFrustumPlanes(proj * cullingView, cullingData.frustumPlanes);
             getFrustumCorners(proj * cullingView, cullingData.frustumCorners);
@@ -184,19 +184,6 @@ int main()
                 mesh.draw(buf, pipeline, view, proj, skyBox.texSkyboxIrradiance, drawWireframe);
                 buf.cmdPopDebugGroupLabel();
             }
-
-            buf.cmdEndRendering();
-
-            const lvk::Framebuffer framebufferMain = {
-                .color = { { .texture = ctx->getCurrentSwapchainTexture() } },
-            };
-
-            buf.cmdBeginRendering(
-                lvk::RenderPass{
-                    .color = { { .loadOp = lvk::LoadOp_Load, .storeOp = lvk::StoreOp_Store } },
-                },
-                framebufferMain
-            );            
 
             buf.cmdEndRendering();
         }

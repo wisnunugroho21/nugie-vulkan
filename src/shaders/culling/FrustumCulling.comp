@@ -224,6 +224,5 @@ void main()
     AABB box = AABBs.boxes[drawData.dd[baseInstance].transformId];
     uint numInstances = isAABBinFrustum(box) ? 1 : 0;
     commands.dc[idx].instanceCount = numInstances;
-    atomicAdd(frustum.numVisibleMeshes, numInstances);
   }
 }
