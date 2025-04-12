@@ -14,21 +14,22 @@ static void shaderModuleCallback(lvk::IContext*, lvk::ShaderModuleHandle handle,
   }
 }
 
-VulkanApp::VulkanApp(const VulkanAppConfig& cfg)
-: cfg_(cfg)
+VulkanApp::VulkanApp(const VulkanAppConfig& cfg) 
+  : cfg_(cfg)
 {
   minilog::initialize(nullptr, { .threadNames = false });
 
   int width  = -95;
   int height = -90;
 
+  if (cfg_.contextConfig.shaderModuleErrorCallback == nullptr)
+  {
+    cfg_.contextConfig.shaderModuleErrorCallback = &shaderModuleCallback;
+  }  
+
   window_ = lvk::initWindow("Simple example", width, height);
-  ctx_    = lvk::createVulkanContextWithSwapchain(
-      window_, width, height,
-      {
-             .enableValidation          = true,
-             .shaderModuleErrorCallback = &shaderModuleCallback,
-      });
+  ctx_    = lvk::createVulkanContextWithSwapchain(window_, width, height, cfg_.contextConfig);
+
   depthTexture_ = ctx_->createTexture({
       .type       = lvk::TextureType_2D,
       .format     = lvk::Format_Z_F32,

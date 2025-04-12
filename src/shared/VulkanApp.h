@@ -59,9 +59,10 @@ struct GLTFIntrospective {
 };
 
 struct VulkanAppConfig {
-  vec3 initialCameraPos    = vec3(0.0f, 0.0f, -2.5f);
-  vec3 initialCameraTarget = vec3(0.0f, 0.0f, 0.0f);
-  bool showGLTFInspector   = false;
+  vec3 initialCameraPos             = vec3(0.0f, 0.0f, -2.5f);
+  vec3 initialCameraTarget          = vec3(0.0f, 0.0f, 0.0f);
+  bool showGLTFInspector            = false;
+  lvk::ContextConfig contextConfig  = {};
 };
 
 class VulkanApp
@@ -98,7 +99,7 @@ public:
   std::unique_ptr<lvk::ImGuiRenderer> imgui_;
   ImPlotContext* implotCtx_ = nullptr;
 
-  const VulkanAppConfig cfg_ = {};
+  VulkanAppConfig cfg_ = {};
 
   CameraPositioner_FirstPerson positioner_ = { cfg_.initialCameraPos, cfg_.initialCameraTarget, vec3(0.0f, 1.0f, 0.0f) };
   Camera camera_                           = Camera(positioner_);
