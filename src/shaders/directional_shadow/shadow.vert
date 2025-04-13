@@ -12,6 +12,7 @@ layout (location=1) out flat uint materialId;
 void main() {
   mat4 model = pc.transforms.model[pc.drawData.dd[gl_BaseInstance].transformId];
   gl_Position = pc.viewProj * model * vec4(in_pos, 1.0);
+  
   uv = vec2(in_tc.x, 1.0-in_tc.y);
   materialId = pc.drawData.dd[gl_BaseInstance].materialId;
 }

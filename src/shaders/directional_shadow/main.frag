@@ -21,7 +21,9 @@ void main() {
 
   // scale alpha-cutoff by fwidth() to prevent alpha-tested foliage geometry from vanishing at large distances
   // https://bgolus.medium.com/anti-aliased-alpha-test-the-esoteric-alpha-to-coverage-8b177335ae4f
-  runAlphaTest(baseColor.a, mat.emissiveFactorAlphaCutoff.w / max(32.0 * fwidth(uv.x), 1.0));
+  if (isFailAlphaTest(baseColor.a, mat.emissiveFactorAlphaCutoff.w / max(32.0 * fwidth(uv.x), 1.0))) {
+    discard;
+  }
 
   // world-space normal
   vec3 n = normalize(normal);

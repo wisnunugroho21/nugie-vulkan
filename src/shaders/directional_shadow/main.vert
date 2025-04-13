@@ -14,12 +14,13 @@ layout (location=4) out vec4 shadowCoords;
 
 void main() {
   mat4 model = pc.transforms.model[pc.drawData.dd[gl_BaseInstance].transformId];
-  gl_Position = pc.viewProj * model * vec4(in_pos, 1.0);
-  uv = vec2(in_tc.x, 1.0-in_tc.y);
-  normal = transpose( inverse(mat3(model)) ) * in_normal;
   vec4 posClip = model * vec4(in_pos, 1.0);
-  worldPos = posClip.xyz/posClip.w;
-  materialId = pc.drawData.dd[gl_BaseInstance].materialId;
 
+  gl_Position = pc.viewProj * model * vec4(in_pos, 1.0);
+
+  uv = vec2(in_tc.x, 1.0-in_tc.y);
+  normal = transpose( inverse(mat3(model)) ) * in_normal;  
+  worldPos = posClip.xyz / posClip.w;
+  materialId = pc.drawData.dd[gl_BaseInstance].materialId;
   shadowCoords = pc.light.viewProjBias * posClip;
 }

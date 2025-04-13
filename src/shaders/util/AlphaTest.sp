@@ -1,6 +1,6 @@
 ﻿//
 
-void runAlphaTest(float alpha, float alphaThreshold)
+bool isFailAlphaTest(float alpha, float alphaThreshold)
 {
   if (alphaThreshold > 0.0) {
     // http://alex-charlton.com/posts/Dithering_on_the_GPU/
@@ -14,7 +14,6 @@ void runAlphaTest(float alpha, float alphaThreshold)
 
     alpha = clamp(alpha - 0.5 * thresholdMatrix[int(mod(gl_FragCoord.x, 4.0))][int(mod(gl_FragCoord.y, 4.0))], 0.0, 1.0);
 
-    if (alpha < alphaThreshold)
-      discard;
+    return alpha < alphaThreshold;
   }
 }
