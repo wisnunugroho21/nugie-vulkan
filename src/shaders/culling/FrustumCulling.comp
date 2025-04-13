@@ -222,7 +222,6 @@ void main()
   if (idx < frustum.numMeshesToCull) {
     uint baseInstance = commands.dc[idx].baseInstance;
     AABB box = AABBs.boxes[drawData.dd[baseInstance].transformId];
-    uint numInstances = isAABBinFrustum(box) ? 1 : 0;
-    commands.dc[idx].instanceCount = numInstances;
+    commands.dc[idx].instanceCount = isAABBinFrustum(box) ? 1 : 0;
   }
 }

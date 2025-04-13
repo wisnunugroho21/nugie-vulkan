@@ -13,7 +13,7 @@
 #define fileNameCachedHierarchy ".cache/ch08_bistro.scene"
 #endif
 
-void loadBistro(MeshData& meshData, Scene& scene) {
+void loadBistro(MeshData& meshData, Scene& scene, const char* exteriorFilename, const char* interiorFilename) {
   if (!isMeshDataValid(fileNameCachedMeshes) || !isMeshHierarchyValid(fileNameCachedHierarchy) ||
       !isMeshMaterialsValid(fileNameCachedMaterials)) {
     printf("No cached mesh data found. Precaching...\n\n");
@@ -24,8 +24,8 @@ void loadBistro(MeshData& meshData, Scene& scene) {
     Scene ourScene_Interior;
 
     // don't generate LODs because meshoptimizer fails on the Bistro mesh
-    loadMeshFile("../../data/bistro/Exterior/exterior.obj", meshData_Exterior, ourScene_Exterior, false);
-    loadMeshFile("../../data/bistro/Interior/interior.obj", meshData_Interior, ourScene_Interior, false);
+    loadMeshFile(exteriorFilename, meshData_Exterior, ourScene_Exterior, false);
+    loadMeshFile(interiorFilename, meshData_Interior, ourScene_Interior, false);
 
     // merge some meshes
     printf("[Unmerged] scene items: %u\n", (uint32_t)ourScene_Exterior.hierarchy.size());
