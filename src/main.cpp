@@ -17,8 +17,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
-#include "shared/LineCanvas.h"
-
 struct LightParams {
 	float theta          = +90.0f;
 	float phi            = -26.0f;
@@ -42,6 +40,14 @@ const struct PushConstant {
 	uint64_t bufferMaterials;
 	uint64_t bufferLight;
 	uint32_t texSkyboxIrradiance;
+};
+
+struct PushConstantCulling
+{
+    uint64_t commands;
+    uint64_t drawData;
+    uint64_t AABBs;
+    uint64_t meshes;
 };
 
 int main()
@@ -83,7 +89,7 @@ int main()
 	lvk::Holder<lvk::TextureHandle> shadowMap = ctx->createTexture({
 		.type       = lvk::TextureType_2D,
 		.format     = lvk::Format_Z_UN16,
-		.dimensions = { 4096, 4096 },
+		.dimensions = { 2048, 2048 },
 		.usage      = lvk::TextureUsageBits_Attachment | lvk::TextureUsageBits_Sampled,
 		.swizzle    = { .r = lvk::Swizzle_R, .g = lvk::Swizzle_R, .b = lvk::Swizzle_R, .a = lvk::Swizzle_1 },
 		.debugName  = "Shadow map",
@@ -145,7 +151,7 @@ int main()
         .storage = lvk::StorageType_Device,
         .size = reorderedBoxes.size() * sizeof(BoundingBox),
         .data = reorderedBoxes.data(),
-        .debugName = "Buffer: AABBs",
+        .debugName = "Buffer AABBs",
     });
 
     struct CullingData
@@ -156,15 +162,12 @@ int main()
         uint32_t numVisibleMeshes = 0; // GPU
     } emptyCullingData;
 
-    int numVisibleMeshes = 0; // CPU
-
     // round-robin
     const lvk::BufferDesc cullingDataDesc = {
         .usage = lvk::BufferUsageBits_Storage,
         .storage = lvk::StorageType_HostVisible,
         .size = sizeof(CullingData),
-        .data = &emptyCullingData,
-        .debugName = "Buffer: CullingData 0",
+        .data = &emptyCullingData
     };
 
     lvk::Holder<lvk::BufferHandle> bufferCullingData[] = {
@@ -175,19 +178,13 @@ int main()
     lvk::SubmitHandle submitHandle[LVK_ARRAY_NUM_ELEMENTS(bufferCullingData)] = {};
     uint32_t currentBufferId = 0;
 
-    struct
-    {
-        uint64_t commands;
-        uint64_t drawData;
-        uint64_t AABBs;
-        uint64_t meshes;
-    } pcCulling = {
+    PushConstantCulling pcCulling {
         .commands = ctx->gpuAddress(mesh.indirectBuffer_.bufferIndirect_),
         .drawData = ctx->gpuAddress(mesh.bufferDrawData_),
         .AABBs = ctx->gpuAddress(bufferAABBs),
     };
 
-    CullingData cullingData = {
+    CullingData cullingData {
         .numMeshesToCull = static_cast<uint32_t>(scene.meshForNode.size())
     };
 
@@ -197,16 +194,15 @@ int main()
 	  bigBoxWS.combinePoint(b.min_);
 	  bigBoxWS.combinePoint(b.max_);
 	}
-  
-	// update shadow map
-	LightParams prevLight = { .depthBiasConst = 0 };
-  
+    
 	// clang-format off
-	const mat4 scaleBias = mat4(0.5, 0.0, 0.0, 0.0,
-								0.0, 0.5, 0.0, 0.0,
-								0.0, 0.0, 1.0, 0.0,
-								0.5, 0.5, 0.0, 1.0);
+	const mat4 scaleBias = mat4(0.5f, 0.0f, 0.0f, 0.0f,
+								0.0f, 0.5f, 0.0f, 0.0f,
+								0.0f, 0.0f, 1.0f, 0.0f,
+								0.5f, 0.5f, 0.0f, 1.0f);
 	// clang-format on
+
+    bool isShadowUpdated = true;
 
     app.run([&](uint32_t width, uint32_t height, float aspectRatio, float deltaSeconds) {
         const mat4 view = app.camera_.getViewMatrix();
@@ -232,32 +228,35 @@ int main()
 
         lvk::ICommandBuffer& buf = ctx->acquireCommandBuffer();
         {
-			// update shadow map
-            buf.cmdPushDebugGroupLabel("Shadow map", 0xff0000ff);
+            if (isShadowUpdated) {
+                // 1. Shadow map
+                buf.cmdPushDebugGroupLabel("Shadow map", 0xff0000ff);
 
-			buf.cmdBeginRendering(
-                lvk::RenderPass{
-                    .depth = {.loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f}
-                },
-                lvk::Framebuffer{ .depthStencil = { .texture = shadowMap } }
-            );
-            
-            buf.cmdSetDepthBias(light.depthBiasConst, light.depthBiasSlope);
-            buf.cmdSetDepthBiasEnable(true);
-            mesh.draw(buf, pipelineShadow, lightView, lightProj);
-            buf.cmdSetDepthBiasEnable(false);            
-            buf.cmdEndRendering();
-            buf.cmdUpdateBuffer(
-                bufferLight, 
-                LightData{
-                    .viewProjBias  = scaleBias * lightProj * lightView,
-                    .lightDir      = vec4(lightDir, 0.0f),
-                    .shadowTexture = shadowMap.index(),
-                    .shadowSampler = samplerShadow.index(),
-                }
-            );
+                buf.cmdBeginRendering(
+                    lvk::RenderPass{
+                        .depth = {.loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f}
+                    },
+                    lvk::Framebuffer{ .depthStencil = { .texture = shadowMap } }
+                );
+                
+                buf.cmdSetDepthBias(light.depthBiasConst, light.depthBiasSlope);
+                buf.cmdSetDepthBiasEnable(true);
+                mesh.draw(buf, pipelineShadow, lightView, lightProj);
+                buf.cmdSetDepthBiasEnable(false);            
+                buf.cmdEndRendering();
+                buf.cmdUpdateBuffer(
+                    bufferLight, 
+                    LightData{
+                        .viewProjBias  = scaleBias * lightProj * lightView,
+                        .lightDir      = vec4(lightDir, 0.0f),
+                        .shadowTexture = shadowMap.index(),
+                        .shadowSampler = samplerShadow.index(),
+                    }
+                );
 
-            buf.cmdPopDebugGroupLabel();
+                buf.cmdPopDebugGroupLabel();
+                isShadowUpdated = false;
+            }
 
             // 0. Cull scene
             getFrustumPlanes(proj * view, cullingData.frustumPlanes);
