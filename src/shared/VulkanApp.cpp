@@ -88,9 +88,9 @@ VulkanApp::VulkanApp(const VulkanAppConfig &cfg)
       app->positioner_.movement_.left_ = pressed;
     if (key == GLFW_KEY_D)
       app->positioner_.movement_.right_ = pressed;
-    if (key == GLFW_KEY_1)
+    if (key == GLFW_KEY_Q)
       app->positioner_.movement_.up_ = pressed;
-    if (key == GLFW_KEY_2)
+    if (key == GLFW_KEY_E)
       app->positioner_.movement_.down_ = pressed;
 
     app->positioner_.movement_.fastSpeed_ = (mods & GLFW_MOD_SHIFT) != 0;
