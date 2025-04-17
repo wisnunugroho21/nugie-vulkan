@@ -25,7 +25,7 @@ int main()
 
 	GLTFContext gltf(app);
 
-	loadGLTF(gltf, "../../data/Test5/Druid.gltf", "../../data/Test5/");
+	loadGLTF(gltf, "../../data/Test9/Bikini_Girl_Source.gltf", "../../data/Test9/");
 
 	gltf.enableMorphing = false;
 
