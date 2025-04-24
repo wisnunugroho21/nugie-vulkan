@@ -68,372 +68,6 @@ namespace
 
 } // namespace
 
-GLTFMaterialDataGPU setupglTFMaterialData(
-	const std::unique_ptr<lvk::IContext> &ctx, const GLTFGlobalSamplers &samplers, const aiMaterial *mtlDescriptor, const char *assetFolder,
-	GLTFDataHolder &glTFDataholder, bool &useVolumetric, bool &usedoublesided)
-{
-	GLTFMaterialTextures mat;
-
-	uint32_t materialTypeFlags = MaterialType_Invalid;
-
-	const uint32_t whitePixel = 0xFFFFFFFF;
-
-	mat.white = ctx->createTexture(
-		{
-			.type = lvk::TextureType_2D,
-			.format = lvk::Format_RGBA_SRGB8,
-			.dimensions = {1, 1},
-			.usage = lvk::TextureUsageBits_Sampled,
-			.data = &whitePixel,
-			.debugName = "white1x1",
-		},
-		"white1x1");
-
-	aiShadingMode shadingMode = aiShadingMode_NoShading;
-	if (mtlDescriptor->Get(AI_MATKEY_SHADING_MODEL, shadingMode) == AI_SUCCESS)
-	{
-		if (shadingMode == aiShadingMode_Unlit)
-		{
-			materialTypeFlags = MaterialType_Unlit;
-		}
-	}
-
-	loadMaterialTexture(mtlDescriptor, aiTextureType_BASE_COLOR, assetFolder, mat.baseColorTexture, ctx, true);
-	loadMaterialTexture(mtlDescriptor, aiTextureType_METALNESS, assetFolder, mat.surfacePropertiesTexture, ctx, false);
-
-	materialTypeFlags = MaterialType_MetallicRoughness;
-
-	// Load common textures
-	loadMaterialTexture(mtlDescriptor, aiTextureType_LIGHTMAP, assetFolder, mat.occlusionTexture, ctx, false);
-	loadMaterialTexture(mtlDescriptor, aiTextureType_EMISSIVE, assetFolder, mat.emissiveTexture, ctx, true);
-	loadMaterialTexture(mtlDescriptor, aiTextureType_NORMALS, assetFolder, mat.normalTexture, ctx, false);
-
-	// Sheen
-	loadMaterialTexture(mtlDescriptor, aiTextureType_SHEEN, assetFolder, mat.sheenColorTexture, ctx, true, 0);
-	loadMaterialTexture(mtlDescriptor, aiTextureType_SHEEN, assetFolder, mat.sheenRoughnessTexture, ctx, false, 1);
-
-	// Clearcoat
-	loadMaterialTexture(mtlDescriptor, aiTextureType_CLEARCOAT, assetFolder, mat.clearCoatTexture, ctx, true, 0);
-	loadMaterialTexture(mtlDescriptor, aiTextureType_CLEARCOAT, assetFolder, mat.clearCoatRoughnessTexture, ctx, false, 1);
-	loadMaterialTexture(mtlDescriptor, aiTextureType_CLEARCOAT, assetFolder, mat.clearCoatNormalTexture, ctx, false, 2);
-
-	// Specular
-	loadMaterialTexture(mtlDescriptor, aiTextureType_SPECULAR, assetFolder, mat.specularTexture, ctx, true, 0);
-	loadMaterialTexture(mtlDescriptor, aiTextureType_SPECULAR, assetFolder, mat.specularColorTexture, ctx, true, 1);
-
-	// Transmission
-	loadMaterialTexture(mtlDescriptor, aiTextureType_TRANSMISSION, assetFolder, mat.transmissionTexture, ctx, true, 0);
-
-	// Volume
-	loadMaterialTexture(mtlDescriptor, aiTextureType_TRANSMISSION, assetFolder, mat.thicknessTexture, ctx, true, 1);
-
-	// Iridescence
-	// loadMaterialTexture(mtlDescriptor, aiTextureType_IRID, assetFolder, mat.specularTexture, ctx, true, 0);
-
-	// Anisotropy
-
-	GLTFMaterialDataGPU res = {
-		.baseColorFactor = vec4(1.0f, 1.0f, 1.0f, 1.0f),
-		.metallicRoughnessNormalOcclusion = vec4(1.0f, 1.0f, 1.0f, 1.0f),
-		.specularFactors = vec4(1.0f, 1.0f, 1.0f, 1.0f),
-		.emissiveFactorAlphaCutoff = vec4(0.0f, 0.0f, 0.0f, 0.5f),
-		.occlusionTexture = mat.occlusionTexture.index(),
-		.emissiveTexture = mat.emissiveTexture.valid() ? mat.emissiveTexture.index() : mat.white.index(),
-		.baseColorTexture = mat.baseColorTexture.valid() ? mat.baseColorTexture.index() : mat.white.index(),
-		.surfacePropertiesTexture = mat.surfacePropertiesTexture.valid() ? mat.surfacePropertiesTexture.index() : mat.white.index(),
-		.normalTexture = mat.normalTexture.valid() ? mat.normalTexture.index() : ~0,
-		.sheenColorTexture = mat.sheenColorTexture.valid() ? mat.sheenColorTexture.index() : mat.white.index(),
-		.sheenRoughnessTexture = mat.sheenRoughnessTexture.valid() ? mat.sheenRoughnessTexture.index() : mat.white.index(),
-		.clearCoatTexture = mat.clearCoatTexture.valid() ? mat.clearCoatTexture.index() : mat.white.index(),
-		.clearCoatRoughnessTexture = mat.clearCoatRoughnessTexture.valid() ? mat.clearCoatRoughnessTexture.index() : mat.white.index(),
-		.clearCoatNormalTexture = mat.clearCoatNormalTexture.valid() ? mat.clearCoatNormalTexture.index() : mat.white.index(),
-		.specularTexture = mat.specularTexture.valid() ? mat.specularTexture.index() : mat.white.index(),
-		.specularColorTexture = mat.specularColorTexture.valid() ? mat.specularColorTexture.index() : mat.white.index(),
-		.transmissionTexture = mat.transmissionTexture.valid() ? mat.transmissionTexture.index() : mat.white.index(),
-		.thicknessTexture = mat.thicknessTexture.valid() ? mat.thicknessTexture.index() : mat.white.index(),
-		.iridescenceTexture = mat.iridescenceTexture.index(),
-		.iridescenceThicknessTexture = mat.iridescenceThicknessTexture.index(),
-		.anisotropyTexture = mat.anisotropyTexture.index(),
-		.materialTypeFlags = materialTypeFlags,
-	};
-
-	aiColor4D aiColor;
-	if (mtlDescriptor->Get(AI_MATKEY_COLOR_DIFFUSE, aiColor) == AI_SUCCESS)
-	{
-		res.baseColorFactor = vec4(aiColor.r, aiColor.g, aiColor.b, aiColor.a);
-	}
-
-	assignUVandSampler(samplers, mtlDescriptor, aiTextureType_DIFFUSE, res.baseColorTextureUV, res.baseColorTextureSampler);
-
-	if (mtlDescriptor->Get(AI_MATKEY_COLOR_EMISSIVE, aiColor) == AI_SUCCESS)
-	{
-		// mat.emissiveFactor = vec3(aiColor.r, aiColor.g, aiColor.b);
-		res.emissiveFactorAlphaCutoff = vec4(aiColor.r, aiColor.g, aiColor.b, 0.5f);
-	}
-
-	assignUVandSampler(samplers, mtlDescriptor, aiTextureType_EMISSIVE, res.emissiveTextureUV, res.emissiveTextureSampler);
-
-	ai_real emissiveStrength = 1.0f;
-	if (mtlDescriptor->Get(AI_MATKEY_EMISSIVE_INTENSITY, emissiveStrength) == AI_SUCCESS)
-	{
-		res.emissiveFactorAlphaCutoff *= vec4(emissiveStrength, emissiveStrength, emissiveStrength, 1.0f);
-	}
-
-	if (materialTypeFlags & MaterialType_MetallicRoughness)
-	{
-		ai_real metallicFactor;
-		if (mtlDescriptor->Get(AI_MATKEY_METALLIC_FACTOR, metallicFactor) == AI_SUCCESS)
-		{
-			res.metallicRoughnessNormalOcclusion.x = metallicFactor;
-		}
-
-		assignUVandSampler(
-			samplers, mtlDescriptor, aiTextureType_METALNESS, res.surfacePropertiesTextureUV, res.surfacePropertiesTextureSampler
-		);
-
-		ai_real roughnessFactor;
-		if (mtlDescriptor->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughnessFactor) == AI_SUCCESS)
-		{
-			res.metallicRoughnessNormalOcclusion.y = roughnessFactor;
-		}
-	}
-	else if (materialTypeFlags & MaterialType_SpecularGlossiness)
-	{
-		ai_real specularFactor[3];
-		if (mtlDescriptor->Get(AI_MATKEY_SPECULAR_FACTOR, specularFactor) == AI_SUCCESS)
-		{
-			res.specularGlossiness.x = specularFactor[0];
-			res.specularGlossiness.y = specularFactor[1];
-			res.specularGlossiness.z = specularFactor[2];
-		}
-		assignUVandSampler(
-			samplers, mtlDescriptor, aiTextureType_SPECULAR, res.surfacePropertiesTextureUV, res.surfacePropertiesTextureSampler
-		);
-
-		ai_real glossinessFactor;
-		if (mtlDescriptor->Get(AI_MATKEY_GLOSSINESS_FACTOR, glossinessFactor) == AI_SUCCESS)
-		{
-			res.specularGlossiness.w = glossinessFactor;
-		}
-	}
-
-	ai_real normalScale;
-	if (mtlDescriptor->Get(AI_MATKEY_GLTF_TEXTURE_SCALE(aiTextureType_NORMALS, 0), normalScale) == AI_SUCCESS)
-	{
-		res.metallicRoughnessNormalOcclusion.z = normalScale;
-	}
-
-	assignUVandSampler(samplers, mtlDescriptor, aiTextureType_NORMALS, res.normalTextureUV, res.normalTextureSampler);
-
-	ai_real occlusionStrength;
-	if (mtlDescriptor->Get(AI_MATKEY_GLTF_TEXTURE_SCALE(aiTextureType_LIGHTMAP, 0), occlusionStrength) == AI_SUCCESS)
-	{
-		res.metallicRoughnessNormalOcclusion.w = occlusionStrength;
-	}
-	
-	assignUVandSampler(samplers, mtlDescriptor, aiTextureType_LIGHTMAP, res.occlusionTextureUV, res.occlusionTextureSampler);
-
-	aiString alphaMode = aiString("OPAQUE");
-	if (mtlDescriptor->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS)
-	{
-		if (alphaMode == aiString("MASK"))
-		{
-			res.alphaMode = GLTFMaterialDataGPU::AlphaMode_Mask;
-		}
-		else if (alphaMode == aiString("BLEND"))
-		{
-			res.alphaMode = GLTFMaterialDataGPU::AlphaMode_Blend;
-		}
-		else
-		{
-			res.alphaMode = GLTFMaterialDataGPU::AlphaMode_Opaque;
-		}
-	}
-
-	ai_real alphaCutoff;
-	if (mtlDescriptor->Get(AI_MATKEY_GLTF_ALPHACUTOFF, alphaCutoff) == AI_SUCCESS)
-	{
-		res.emissiveFactorAlphaCutoff.w = alphaCutoff;
-	}
-
-	// Extensions
-	// Sheen
-	{
-		bool useSheen = !mat.sheenColorTexture.empty() || !mat.sheenRoughnessTexture.empty();
-		aiColor4D sheenColorFactor;
-		if (mtlDescriptor->Get(AI_MATKEY_SHEEN_COLOR_FACTOR, sheenColorFactor) == AI_SUCCESS)
-		{
-			res.sheenFactors = vec4(sheenColorFactor.r, sheenColorFactor.g, sheenColorFactor.b, sheenColorFactor.a);
-			useSheen = true;
-		}
-		ai_real sheenRoughnessFactor;
-		if (mtlDescriptor->Get(AI_MATKEY_SHEEN_ROUGHNESS_FACTOR, sheenRoughnessFactor) == AI_SUCCESS)
-		{
-			res.sheenFactors.w = sheenRoughnessFactor;
-			useSheen = true;
-		}
-
-		if (assignUVandSampler(samplers, mtlDescriptor, aiTextureType_SHEEN, res.sheenColorTextureUV, res.sheenColorTextureSampler, 0))
-		{
-			useSheen = true;
-		}
-		if (assignUVandSampler(
-				samplers, mtlDescriptor, aiTextureType_SHEEN, res.sheenRoughnessTextureUV, res.sheenRoughnessTextureSampler, 1))
-		{
-			useSheen = true;
-		}
-
-		if (useSheen)
-		{
-			res.materialTypeFlags |= MaterialType_Sheen;
-		}
-	}
-
-	// Clear coat
-	{
-		bool useClearCoat = !mat.clearCoatTexture.empty() || !mat.clearCoatRoughnessTexture.empty() || !mat.clearCoatNormalTexture.empty();
-		ai_real clearcoatFactor;
-		if (mtlDescriptor->Get(AI_MATKEY_CLEARCOAT_FACTOR, clearcoatFactor) == AI_SUCCESS)
-		{
-			res.clearcoatTransmissionThickness.x = clearcoatFactor;
-			useClearCoat = true;
-		}
-
-		ai_real clearcoatRoughnessFactor;
-		if (mtlDescriptor->Get(AI_MATKEY_CLEARCOAT_ROUGHNESS_FACTOR, clearcoatRoughnessFactor) == AI_SUCCESS)
-		{
-			res.clearcoatTransmissionThickness.y = clearcoatRoughnessFactor;
-			useClearCoat = true;
-		}
-
-		if (assignUVandSampler(
-				samplers, mtlDescriptor, aiTextureType_CLEARCOAT, res.clearCoatTextureUV, res.clearCoatNormalTextureSampler, 0))
-		{
-			useClearCoat = true;
-		}
-
-		if (assignUVandSampler(
-				samplers, mtlDescriptor, aiTextureType_CLEARCOAT, res.clearCoatRoughnessTextureUV, res.clearCoatRoughnessTextureSampler, 1))
-		{
-			useClearCoat = true;
-		}
-
-		if (assignUVandSampler(
-				samplers, mtlDescriptor, aiTextureType_CLEARCOAT, res.clearCoatNormalTextureUV, res.clearCoatNormalTextureSampler, 2))
-		{
-			useClearCoat = true;
-		}
-
-		if (useClearCoat)
-		{
-			res.materialTypeFlags |= MaterialType_ClearCoat;
-		}
-	}
-
-	// Specular
-	{
-		bool useSpecular = !mat.specularColorTexture.empty() || !mat.specularTexture.empty();
-
-		ai_real specularFactor;
-		if (mtlDescriptor->Get(AI_MATKEY_SPECULAR_FACTOR, specularFactor) == AI_SUCCESS)
-		{
-			res.specularFactors.w = specularFactor;
-			useSpecular = true;
-		}
-
-		assignUVandSampler(samplers, mtlDescriptor, aiTextureType_SPECULAR, res.specularTextureUV, res.specularTextureSampler, 0);
-
-		aiColor4D specularColorFactor;
-		if (mtlDescriptor->Get(AI_MATKEY_COLOR_SPECULAR, specularColorFactor) == AI_SUCCESS)
-		{
-			res.specularFactors = vec4(specularColorFactor.r, specularColorFactor.g, specularColorFactor.b, res.specularFactors.w);
-			useSpecular = true;
-		}
-
-		assignUVandSampler(samplers, mtlDescriptor, aiTextureType_SPECULAR, res.specularColorTextureUV, res.specularColorTextureSampler, 1);
-
-		if (useSpecular)
-		{
-			res.materialTypeFlags |= MaterialType_Specular;
-		}
-	}
-
-	// Transmission
-	{
-		bool useTransmission = !mat.transmissionTexture.empty();
-
-		ai_real transmissionFactor = 0.0f;
-		if (mtlDescriptor->Get(AI_MATKEY_TRANSMISSION_FACTOR, transmissionFactor) == AI_SUCCESS)
-		{
-			res.clearcoatTransmissionThickness.z = transmissionFactor;
-			useTransmission = true;
-		}
-
-		if (useTransmission)
-		{
-			res.materialTypeFlags |= MaterialType_Transmission;
-			useVolumetric = true;
-		}
-
-		assignUVandSampler(samplers, mtlDescriptor, aiTextureType_TRANSMISSION, res.transmissionTextureUV, res.transmissionTextureSampler, 0);
-	}
-
-	{
-		bool useVolume = !mat.thicknessTexture.empty();
-
-		ai_real thicknessFactor = 0.0f;
-		if (mtlDescriptor->Get(AI_MATKEY_VOLUME_THICKNESS_FACTOR, thicknessFactor) == AI_SUCCESS)
-		{
-			res.clearcoatTransmissionThickness.w = thicknessFactor;
-			useVolume = true;
-		}
-
-		ai_real attenuationDistance = 0.0f;
-		if (mtlDescriptor->Get(AI_MATKEY_VOLUME_ATTENUATION_DISTANCE, attenuationDistance) == AI_SUCCESS)
-		{
-			res.attenuation.w = attenuationDistance;
-			useVolume = true;
-		}
-
-		aiColor4D volumeAttenuationColor;
-		if (mtlDescriptor->Get(AI_MATKEY_VOLUME_ATTENUATION_COLOR, volumeAttenuationColor) == AI_SUCCESS)
-		{
-			res.attenuation.x = volumeAttenuationColor.r;
-			res.attenuation.y = volumeAttenuationColor.g;
-			res.attenuation.z = volumeAttenuationColor.b;
-			useVolume = true;
-		}
-
-		if (useVolume)
-		{
-			res.materialTypeFlags |= MaterialType_Transmission | MaterialType_Volume;
-			useVolumetric = true;
-		}
-
-		assignUVandSampler(samplers, mtlDescriptor, aiTextureType_TRANSMISSION, res.thicknessTextureUV, res.thicknessTextureSampler, 1);
-	}
-
-	// IOR
-	ai_real ior;
-	if (mtlDescriptor->Get(AI_MATKEY_REFRACTI, ior) == AI_SUCCESS)
-	{
-		res.ior = ior;
-	}
-
-	// Doublesided
-	bool ds = false;
-	if (mtlDescriptor->Get(AI_MATKEY_TWOSIDED, ds) == AI_SUCCESS)
-	{
-		usedoublesided |= ds;
-	}
-
-	mat.wasLoaded = true;
-
-	glTFDataholder.textures.push_back(std::move(mat));
-
-	return res;
-}
-
 static uint32_t getNumVertices(const aiScene &scene)
 {
 	uint32_t num = 0;
@@ -610,6 +244,7 @@ void loadGLTF(GLTFContext &gltf, const char *glTFName, const char *glTFDataPath)
 
 		vertOffset += mesh->mNumVertices;
 	}
+	
 	// load morph targets
 	for (uint32_t meshId = 0; meshId != scene->mNumMeshes; meshId++)
 	{
@@ -654,18 +289,6 @@ void loadGLTF(GLTFContext &gltf, const char *glTFName, const char *glTFDataPath)
 
 	auto &ctx = gltf.app.ctx_;
 
-	for (unsigned int mtl = 0; mtl < scene->mNumMaterials; ++mtl)
-	{
-		const aiMaterial *mtlDescriptor = scene->mMaterials[mtl];
-		gltf.matPerFrame.materials[mtl] = setupglTFMaterialData(
-			ctx, gltf.samplers, mtlDescriptor, glTFDataPath, gltf.glTFDataholder, gltf.isVolumetricMaterial, gltf.doublesided);
-		gltf.inspector.materials.push_back({
-			.name = mtlDescriptor->GetName().C_Str() ? mtlDescriptor->GetName().C_Str() : "Material",
-			.materialMask = gltf.matPerFrame.materials[mtl].materialTypeFlags,
-			.currentMaterialMask = gltf.matPerFrame.materials[mtl].materialTypeFlags,
-		});
-	}
-
 	uint32_t nonBoneMtxId = numBones;
 
 	const char *rootName = scene->mRootNode->mName.C_Str() ? scene->mRootNode->mName.C_Str() : "root";
@@ -692,10 +315,7 @@ void loadGLTF(GLTFContext &gltf, const char *glTFName, const char *glTFDataPath)
 				.indexOffset = startIndex[meshIdx],
 				.indexCount = mesh->mNumFaces * 3,
 				.matIdx = mesh->mMaterialIndex,
-				.sortingType =
-					gltf.matPerFrame.materials[mesh->mMaterialIndex].alphaMode == GLTFMaterialDataGPU::AlphaMode_Blend ? SortingType_Transparent
-					: gltf.matPerFrame.materials[mesh->mMaterialIndex].materialTypeFlags & MaterialType_Transmission   ? SortingType_Transmission
-																													   : SortingType_Opaque,
+				.sortingType = SortingType_Opaque
 			});
 			gltf.nodesStorage[gltfNode].meshes.push_back(gltf.meshesStorage.size() - 1);
 		}
@@ -811,14 +431,6 @@ void loadGLTF(GLTFContext &gltf, const char *glTFName, const char *glTFDataPath)
 		}},
 		.depthFormat = gltf.app.getDepthFormat(),
 		.cullMode = lvk::CullMode_Back,
-	});
-
-	gltf.matBuffer = ctx->createBuffer({
-		.usage = lvk::BufferUsageBits_Storage,
-		.storage = lvk::StorageType_HostVisible,
-		.size = sizeof(gltf.matPerFrame),
-		.data = &gltf.matPerFrame,
-		.debugName = "PerFrame materials",
 	});
 
 	const EnvironmentsPerFrame envPerFrame = {
@@ -1028,7 +640,6 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
 	struct PushConstants
 	{
 		uint64_t draw;
-		uint64_t materials;
 		uint64_t environments;
 		uint64_t lights;
 		uint64_t transforms;
@@ -1039,7 +650,6 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
 		uint32_t lightsCount;
 	} pushConstants = {
 		.draw = ctx->gpuAddress(gltf.perFrameBuffer),
-		.materials = ctx->gpuAddress(gltf.matBuffer),
 		.environments = ctx->gpuAddress(gltf.envBuffer),
 		.lights = ctx->gpuAddress(gltf.lightsBuffer),
 		.transforms = ctx->gpuAddress(gltf.transformBuffer),
@@ -1083,24 +693,6 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
 		gltf.app.imgui_->beginFrame(framebuffer);
 		gltf.app.drawFPS();
 		gltf.app.drawMemo();
-
-		gltf.app.drawGTFInspector(gltf.inspector);
-
-		bool uploadMat = false;
-		for (uint32_t m = 0; m != gltf.inspector.materials.size(); m++)
-		{
-			if (gltf.inspector.materials[m].modified)
-			{
-				gltf.inspector.materials[m].modified = false;
-				uploadMat = true;
-				gltf.matPerFrame.materials[m].materialTypeFlags = gltf.inspector.materials[m].currentMaterialMask;
-			}
-		}
-
-		if (uploadMat)
-		{
-			ctx->upload(gltf.matBuffer, &gltf.matPerFrame, sizeof(gltf.matPerFrame));
-		}
 
 		if (gltf.inspector.activeCamera >= gltf.cameras.size() && !gltf.cameras.empty())
 		{
@@ -1162,8 +754,6 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
 		}
 	}
 
-	const bool screenCopy = gltf.isScreenCopyRequired();
-
 	{
 		// 1st pass
 		pushConstants.transmissionFramebuffer = 0;
@@ -1174,7 +764,7 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
 		};
 
 		const lvk::Framebuffer framebuffer = {
-			.color = {{.texture = screenCopy ? gltf.offscreenTex[gltf.currentOffscreenTex] : ctx->getCurrentSwapchainTexture()}},
+			.color = {{.texture = ctx->getCurrentSwapchainTexture()}},
 			.depthStencil = {.texture = gltf.app.getDepthTexture()},
 		};
 
@@ -1196,10 +786,7 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
 				buf.cmdDrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, transformId);
 				buf.cmdPopDebugGroupLabel();
 			}
-			if (!screenCopy)
-			{
-				drawUI(buf, framebuffer);
-			}
+
 			buf.cmdEndRendering();
 		}
 	}
@@ -1216,17 +803,6 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
 			.color = {{.texture = ctx->getCurrentSwapchainTexture()}},
 			.depthStencil = {.texture = gltf.app.getDepthTexture()},
 		};
-
-		if (screenCopy)
-		{
-			buf.cmdCopyImage(
-				gltf.offscreenTex[gltf.currentOffscreenTex], ctx->getCurrentSwapchainTexture(),
-				ctx->getDimensions(ctx->getCurrentSwapchainTexture()));
-			buf.cmdGenerateMipmap(gltf.offscreenTex[gltf.currentOffscreenTex]);
-
-			pushConstants.transmissionFramebuffer = gltf.offscreenTex[gltf.currentOffscreenTex].index();
-			buf.cmdPushConstants(pushConstants);
-		}
 
 		buf.cmdBeginRendering(renderPass, framebuffer, {.textures = {lvk::TextureHandle(gltf.offscreenTex[gltf.currentOffscreenTex])}});
 		buf.cmdBindVertexBuffer(0, gltf.vertexBuffer, 0);
@@ -1266,36 +842,6 @@ void renderGLTF(GLTFContext &gltf, const mat4 &model, const mat4 &view, const ma
 	ctx->wait(ctx->submit(buf, ctx->getCurrentSwapchainTexture()));
 
 	gltf.currentOffscreenTex = (gltf.currentOffscreenTex + 1) % LVK_ARRAY_NUM_ELEMENTS(gltf.offscreenTex);
-}
-
-MaterialType detectMaterialType(const aiMaterial *mtl)
-{
-	aiShadingMode shadingMode = aiShadingMode_NoShading;
-
-	if (mtl->Get(AI_MATKEY_SHADING_MODEL, shadingMode) == AI_SUCCESS)
-	{
-		if (shadingMode == aiShadingMode_Unlit)
-		{
-			return MaterialType_Unlit;
-		}
-	}
-
-	if (shadingMode == aiShadingMode_PBR_BRDF)
-	{
-		ai_real factor = 0;
-		if (mtl->Get(AI_MATKEY_GLOSSINESS_FACTOR, factor) == AI_SUCCESS)
-		{
-			return MaterialType_SpecularGlossiness;
-		}
-		else if (mtl->Get(AI_MATKEY_METALLIC_FACTOR, factor) == AI_SUCCESS)
-		{
-			return MaterialType_MetallicRoughness;
-		}
-	}
-
-	LLOGW("Unknown material type\n");
-
-	return MaterialType_Invalid;
 }
 
 void printPrefix(int ofs)

@@ -2,7 +2,6 @@
 
 // gl_BaseInstance - transformId
 
-layout(std430, buffer_reference) buffer Materials;
 layout(std430, buffer_reference) buffer Environments;
 layout(std430, buffer_reference) buffer Lights;
 
@@ -31,7 +30,6 @@ layout(std430, buffer_reference) readonly buffer Matrices {
 
 layout(push_constant) uniform PerFrameData {
   PerDrawData drawable;
-  Materials materials;
   Environments environments;
   Lights lights;
   Transforms transforms;

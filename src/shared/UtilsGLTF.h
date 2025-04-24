@@ -2,7 +2,6 @@
 
 #include "VulkanApp.h"
 
-#include <assimp/GltfMaterial.h>
 #include <assimp/cimport.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
@@ -12,19 +11,6 @@
 #include "UtilsAnim.h"
 
 #include <lvk/LVK.h>
-
-enum MaterialType : uint32_t
-{
-	MaterialType_Invalid = 0,
-	MaterialType_Unlit = 0x80,
-	MaterialType_MetallicRoughness = 0x1,
-	MaterialType_SpecularGlossiness = 0x2,
-	MaterialType_Sheen = 0x4,
-	MaterialType_ClearCoat = 0x8,
-	MaterialType_Specular = 0x10,
-	MaterialType_Transmission = 0x20,
-	MaterialType_Volume = 0x40,
-};
 
 const uint32_t kMaxMaterials = 128;
 const uint32_t kMaxEnvironments = 4;
@@ -172,48 +158,6 @@ struct MorphTarget
 
 static_assert(sizeof(Vertex) == sizeof(uint32_t) * 16);
 
-struct GLTFMaterialTextures
-{
-	// Metallic Roughness / SpecluarGlossiness
-	lvk::Holder<lvk::TextureHandle> baseColorTexture;
-	lvk::Holder<lvk::TextureHandle> surfacePropertiesTexture;
-
-	// Common properties
-	lvk::Holder<lvk::TextureHandle> normalTexture;
-	lvk::Holder<lvk::TextureHandle> occlusionTexture;
-	lvk::Holder<lvk::TextureHandle> emissiveTexture;
-
-	// Sheen
-	lvk::Holder<lvk::TextureHandle> sheenColorTexture;
-	lvk::Holder<lvk::TextureHandle> sheenRoughnessTexture;
-
-	// Clearcoat
-	lvk::Holder<lvk::TextureHandle> clearCoatTexture;
-	lvk::Holder<lvk::TextureHandle> clearCoatRoughnessTexture;
-	lvk::Holder<lvk::TextureHandle> clearCoatNormalTexture;
-
-	// Specular
-	lvk::Holder<lvk::TextureHandle> specularTexture;
-	lvk::Holder<lvk::TextureHandle> specularColorTexture;
-
-	// Transmission
-	lvk::Holder<lvk::TextureHandle> transmissionTexture;
-
-	// Volumen
-	lvk::Holder<lvk::TextureHandle> thicknessTexture;
-
-	// Iridescence
-	lvk::Holder<lvk::TextureHandle> iridescenceTexture;
-	lvk::Holder<lvk::TextureHandle> iridescenceThicknessTexture;
-
-	// Anisotropy
-	lvk::Holder<lvk::TextureHandle> anisotropyTexture;
-
-	lvk::Holder<lvk::TextureHandle> white;
-
-	bool wasLoaded = false;
-};
-
 struct EnvironmentMapTextures
 {
 	explicit EnvironmentMapTextures(const std::unique_ptr<lvk::IContext> &ctx)
@@ -263,114 +207,6 @@ struct EnvironmentMapTextures
 	lvk::Holder<lvk::TextureHandle> envMapTexture;
 	lvk::Holder<lvk::TextureHandle> envMapTextureCharlie;
 	lvk::Holder<lvk::TextureHandle> envMapTextureIrradiance;
-};
-
-bool assignUVandSampler(
-	const GLTFGlobalSamplers &samplers, const aiMaterial *mtlDescriptor, aiTextureType textureType, uint32_t &uvIndex,
-	uint32_t &textureSampler, int index = 0);
-
-struct GLTFMaterialDataGPU
-{
-	vec4 baseColorFactor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
-	vec4 metallicRoughnessNormalOcclusion =
-		vec4(1.0f, 1.0f, 1.0f, 1.0f); // Packed metallicFactor, roughnessFactor, normalScale, occlusionStrength
-	vec4 specularGlossiness = vec4(1.0f, 1.0f, 1.0f, 1.0f);
-	vec4 sheenFactors = vec4(1.0f, 1.0f, 1.0f, 1.0f); // Sheen
-
-	vec4 clearcoatTransmissionThickness = vec4(1.0f, 1.0f, 1.0f, 1.0f); // Clearcoat
-	vec4 specularFactors = vec4(1.0f, 1.0f, 1.0f, 1.0f);
-	vec4 attenuation = vec4(1.0f, 1.0f, 1.0f, 1.0f);
-
-	vec4 emissiveFactorAlphaCutoff = vec4(0.0f, 0.0f, 0.0f, 0.5f);
-
-	uint32_t occlusionTexture = 0;
-	uint32_t occlusionTextureSampler = 0;
-	uint32_t occlusionTextureUV = 0;
-
-	uint32_t emissiveTexture = 0;
-	uint32_t emissiveTextureSampler = 0;
-	uint32_t emissiveTextureUV = 0;
-
-	uint32_t baseColorTexture = 0;
-	uint32_t baseColorTextureSampler = 0;
-	uint32_t baseColorTextureUV = 0;
-
-	uint32_t surfacePropertiesTexture = 0;
-	uint32_t surfacePropertiesTextureSampler = 0;
-	uint32_t surfacePropertiesTextureUV = 0;
-
-	uint32_t normalTexture = 0;
-	uint32_t normalTextureSampler = 0;
-	uint32_t normalTextureUV = 0;
-
-	uint32_t sheenColorTexture = 0;
-	uint32_t sheenColorTextureSampler = 0;
-	uint32_t sheenColorTextureUV = 0;
-	uint32_t sheenRoughnessTexture = 0;
-	uint32_t sheenRoughnessTextureSampler = 0;
-
-	uint32_t sheenRoughnessTextureUV = 0;
-	uint32_t clearCoatTexture = 0;
-	uint32_t clearCoatTextureSampler = 0;
-	uint32_t clearCoatTextureUV = 0;
-
-	uint32_t clearCoatRoughnessTexture = 0;
-	uint32_t clearCoatRoughnessTextureSampler = 0;
-	uint32_t clearCoatRoughnessTextureUV = 0;
-	uint32_t clearCoatNormalTexture = 0;
-
-	uint32_t clearCoatNormalTextureSampler = 0;
-	uint32_t clearCoatNormalTextureUV = 0;
-	uint32_t specularTexture = 0;
-	uint32_t specularTextureSampler = 0;
-
-	uint32_t specularTextureUV = 0;
-	uint32_t specularColorTexture = 0;
-	uint32_t specularColorTextureSampler = 0;
-	uint32_t specularColorTextureUV = 0;
-
-	uint32_t transmissionTexture = 0;
-	uint32_t transmissionTextureSampler = 0;
-	uint32_t transmissionTextureUV = 0;
-	uint32_t thicknessTexture = 0;
-
-	uint32_t thicknessTextureSampler = 0;
-	uint32_t thicknessTextureUV = 0;
-	uint32_t iridescenceTexture = 0;
-	uint32_t iridescenceTextureSampler = 0;
-
-	uint32_t iridescenceTextureUV = 0;
-	uint32_t iridescenceThicknessTexture = 0;
-	uint32_t iridescenceThicknessTextureSampler = 0;
-	uint32_t iridescenceThicknessTextureUV = 0;
-
-	uint32_t anisotropyTexture = 0;
-	uint32_t anisotropyTextureSampler = 0;
-	uint32_t anisotropyTextureUV = 0;
-	uint32_t alphaMode = 0;
-
-	uint32_t materialTypeFlags = 0;
-	float ior = 1.5f;
-	uint32_t padding[2] = {0, 0};
-
-	enum AlphaMode : uint32_t
-	{
-		AlphaMode_Opaque = 0,
-		AlphaMode_Mask = 1,
-		AlphaMode_Blend = 2,
-	};
-};
-
-static_assert(sizeof(GLTFMaterialDataGPU) % 16 == 0);
-
-struct GLTFDataHolder
-{
-	std::vector<GLTFMaterialTextures> textures;
-};
-
-struct MaterialsPerFrame
-{
-	GLTFMaterialDataGPU materials[kMaxMaterials];
 };
 
 using GLTFNodeRef = uint32_t;
@@ -461,10 +297,6 @@ struct GLTFBone
 	mat4 transform = mat4(1);
 };
 
-GLTFMaterialDataGPU setupglTFMaterialData(
-	const std::unique_ptr<lvk::IContext> &ctx, const GLTFGlobalSamplers &samplers, aiMaterial *const &mtlDescriptor,
-	const char *assetFolder, GLTFDataHolder &glTFDataholder, bool &useVolumetric);
-
 struct GLTFContext
 {
 	explicit GLTFContext(VulkanApp &app_)
@@ -472,8 +304,6 @@ struct GLTFContext
 	{
 	}
 
-	GLTFDataHolder glTFDataholder;
-	MaterialsPerFrame matPerFrame;
 	GLTFGlobalSamplers samplers;
 	EnvironmentMapTextures envMapTextures;
 	GLTFFrameData frameData;
@@ -511,7 +341,6 @@ struct GLTFContext
 	lvk::Holder<lvk::BufferHandle> vertexSkinningBuffer;
 	lvk::Holder<lvk::BufferHandle> vertexMorphingBuffer;
 	lvk::Holder<lvk::BufferHandle> indexBuffer;
-	lvk::Holder<lvk::BufferHandle> matBuffer;
 
 	lvk::Holder<lvk::TextureHandle> offscreenTex[3] = {};
 
@@ -529,21 +358,17 @@ struct GLTFContext
 	LineCanvas3D canvas3d;
 
 	bool hasBones = false;
-	bool isVolumetricMaterial = false;
 	bool animated = false;
 	bool skinning = false;
 	bool morphing = false;
 	bool doublesided = false;
 	bool enableMorphing = true;
-
-	bool isScreenCopyRequired() const { return isVolumetricMaterial; }
 };
 
 void loadGLTF(GLTFContext &context, const char *gltfName, const char *glTFDataPath);
 void renderGLTF(GLTFContext &context, const mat4 &model, const mat4 &view, const mat4 &proj, bool rebuildRenderList = false);
 void animateGLTF(GLTFContext &gltf, AnimationState &anim, float dt);
 void animateBlendingGLTF(GLTFContext &gltf, AnimationState &anim1, AnimationState &anim2, float weight, float dt);
-MaterialType detectMaterialType(const aiMaterial *mtl);
 
 void printPrefix(int ofs);
 void printMat4(const aiMatrix4x4 &m);
