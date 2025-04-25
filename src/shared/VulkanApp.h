@@ -85,6 +85,7 @@ public:
 	virtual void drawMemo();
 	virtual void drawGTFInspector(GLTFIntrospective &intro);
 	virtual void drawGTFInspector_Animations(GLTFIntrospective &intro);
+	virtual void drawGTFInspector_Materials(GLTFIntrospective &intro);
 	virtual void drawGTFInspector_Cameras(GLTFIntrospective &intro);
 
 	lvk::Format getDepthFormat() const;

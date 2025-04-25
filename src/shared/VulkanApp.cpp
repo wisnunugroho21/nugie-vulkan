@@ -214,6 +214,140 @@ void VulkanApp::drawGTFInspector_Animations(GLTFIntrospective &intro)
 	ImGui::End();
 }
 
+void VulkanApp::drawGTFInspector_Materials(GLTFIntrospective &intro)
+{
+	if (!intro.showMaterials || intro.materials.empty())
+		return;
+
+	if (ImGui::Begin(
+			"Materials", nullptr,
+			ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+				ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoCollapse))
+	{
+		for (uint32_t m = 0; m < intro.materials.size(); ++m)
+		{
+			GLTFMaterialIntro &mat = intro.materials[m];
+			const uint32_t &currentMask = intro.materials[m].currentMaterialMask;
+
+			auto setMaterialMask = [&m = intro.materials[m]](uint32_t flag, bool active)
+			{
+				m.modified = true;
+				if (active)
+				{
+					m.currentMaterialMask |= flag;
+				}
+				else
+				{
+					m.currentMaterialMask &= ~flag;
+				}
+			};
+
+			const bool isUnlit = (currentMask & MaterialType_Unlit) == MaterialType_Unlit;
+
+			bool state = false;
+
+			ImGui::Text("%s", mat.name.c_str());
+			ImGui::PushID(m);
+			state = isUnlit;
+
+			if (ImGui::RadioButton("Unlit", state))
+			{
+				mat.currentMaterialMask = 0;
+				setMaterialMask(MaterialType_Unlit, true);
+			}
+
+			state = (currentMask & MaterialType_MetallicRoughness) == MaterialType_MetallicRoughness;
+			if ((mat.materialMask & MaterialType_MetallicRoughness) == MaterialType_MetallicRoughness)
+			{
+				if (ImGui::RadioButton("MetallicRoughness", state))
+				{
+					setMaterialMask(MaterialType_Unlit, false);
+					setMaterialMask(MaterialType_SpecularGlossiness, false);
+					setMaterialMask(MaterialType_MetallicRoughness, true);
+				}
+			}
+
+			state = (currentMask & MaterialType_SpecularGlossiness) == MaterialType_SpecularGlossiness;
+			if ((mat.materialMask & MaterialType_SpecularGlossiness) == MaterialType_SpecularGlossiness)
+			{
+				if (ImGui::RadioButton("SpecularGlossiness", state))
+				{
+					setMaterialMask(MaterialType_Unlit, false);
+					setMaterialMask(MaterialType_SpecularGlossiness, true);
+					setMaterialMask(MaterialType_MetallicRoughness, false);
+				}
+			}
+
+			state = (currentMask & MaterialType_Sheen) == MaterialType_Sheen;
+			if ((mat.materialMask & MaterialType_Sheen) == MaterialType_Sheen)
+			{
+				ImGui::BeginDisabled(isUnlit);
+				if (ImGui::Checkbox("Sheen", &state))
+				{
+					setMaterialMask(MaterialType_Sheen, state);
+				}
+				ImGui::EndDisabled();
+			}
+
+			state = (mat.currentMaterialMask & MaterialType_ClearCoat) == MaterialType_ClearCoat;
+			if ((mat.materialMask & MaterialType_ClearCoat) == MaterialType_ClearCoat)
+			{
+				ImGui::BeginDisabled(isUnlit);
+				if (ImGui::Checkbox("ClearCoat", &state))
+				{
+					setMaterialMask(MaterialType_ClearCoat, state);
+				}
+				ImGui::EndDisabled();
+			}
+
+			state = (mat.currentMaterialMask & MaterialType_Specular) == MaterialType_Specular;
+			if ((mat.materialMask & MaterialType_Specular) == MaterialType_Specular)
+			{
+				ImGui::BeginDisabled(isUnlit);
+				if (ImGui::Checkbox("Specular", &state))
+				{
+					setMaterialMask(MaterialType_Specular, state);
+				}
+				ImGui::EndDisabled();
+			}
+
+			state = (mat.currentMaterialMask & MaterialType_Transmission) == MaterialType_Transmission;
+			if ((mat.materialMask & MaterialType_Transmission) == MaterialType_Transmission)
+			{
+				ImGui::BeginDisabled(isUnlit);
+				if (ImGui::Checkbox("Transmission", &state))
+				{
+					if (!state)
+					{
+						setMaterialMask(MaterialType_Volume, false);
+					}
+					setMaterialMask(MaterialType_Transmission, state);
+				}
+				ImGui::EndDisabled();
+			}
+
+			state = (mat.currentMaterialMask & MaterialType_Volume) == MaterialType_Volume;
+			if ((mat.materialMask & MaterialType_Volume) == MaterialType_Volume)
+			{
+				ImGui::BeginDisabled(isUnlit);
+				if (ImGui::Checkbox("Volume", &state))
+				{
+					setMaterialMask(MaterialType_Volume, state);
+					if (state)
+					{
+						setMaterialMask(MaterialType_Transmission, true);
+					}
+				}
+				ImGui::EndDisabled();
+			}
+
+			ImGui::PopID();
+		}
+	}
+
+	ImGui::End();
+}
+
 void VulkanApp::drawGTFInspector_Cameras(GLTFIntrospective &intro)
 {
 	if (!intro.showCameras)
@@ -249,6 +383,7 @@ void VulkanApp::drawGTFInspector(GLTFIntrospective &intro)
 	ImGui::SetNextWindowPos(ImVec2(10, 300));
 
 	drawGTFInspector_Animations(intro);
+	drawGTFInspector_Materials(intro);
 	drawGTFInspector_Cameras(intro);
 }
 

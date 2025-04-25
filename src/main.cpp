@@ -20,12 +20,12 @@ int main()
 	VulkanApp app({
 		.initialCameraPos = vec3(0.0f, 3.0f, 3.0f),
 		.initialCameraTarget = vec3(0.0f, 3.0f, 0.0f),
-		.showGLTFInspector = true
+		.showGLTFInspector = true,
 	});
 
 	GLTFContext gltf(app);
 
-	loadGLTF(gltf, "../../data/bikini_girl/Bikini_Girl_Source.gltf", "../../data/bikini_girl/");
+	loadGLTF(gltf, "../../data/Test9/Bikini_Girl_Source.gltf", "../../data/Test9/");
 
 	gltf.enableMorphing = false;
 
