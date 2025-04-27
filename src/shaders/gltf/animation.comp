@@ -106,7 +106,10 @@ void main()
     norm += transpose(inverse(boneMat)) * inNorm * inVtx.weights[i];
   }
 
-  if (i == 0) {
+  bool isEmpty = pos.x == 0 && pos.y == 0 && pos.z == 0
+    && norm.x == 0 && norm.y == 0 && norm.z == 0;
+
+  if (i == 0 || isEmpty) {
     pos.xyz = inPos.xyz;
     norm.xyz = inNorm.xyz;
   }
