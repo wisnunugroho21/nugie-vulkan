@@ -22,11 +22,17 @@ int main()
 		.initialCameraTarget = vec3(0.0f, 3.0f, 0.0f)
 	});
 
-	Context gltf(app.ctx_.get(), app.getDepthFormat());
+	SkeletalMesh gltf(app.ctx_.get(), app.getDepthFormat());
 
 	load(gltf, "../../data/bikini_girl/Bikini_Girl_Source.gltf", "../../data/bikini_girl/");
 
-	gltf.enableMorphing = false;
+	gltf.skinning = true;
+	AnimationState anim = {
+		.animId      = 0,
+		.currentTime = 0.0f,
+		.playOnce    = false,
+		.active      = true,
+	};
 
 	const mat4 t = glm::translate(mat4(1.0f), vec3(0.0f, -1.0f, 0.0f)) * glm::scale(mat4(1.0f), vec3(1.0f));
 
@@ -35,6 +41,7 @@ int main()
 		const mat4 v = app.camera_.getViewMatrix();
 		const mat4 p = glm::perspective(45.0f, aspectRatio, 0.01f, 200.0f);
 
+		animate(gltf, anim, deltaSeconds);
 		render(gltf, app.getDepthTexture(), m, v, p);
 	});
 
