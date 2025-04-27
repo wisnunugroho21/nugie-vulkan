@@ -1,6 +1,6 @@
-#include "UtilsGLTF.h"
+#include "SkeletalMesh.h"
 
-uint32_t getNextMtxId(SkeletalMesh &gltf, const char *name, uint32_t &nextEmptyId, const mat4 &mtx)
+uint32_t getNextMtxId(SkeletalMesh &gltf, const char *name, uint32_t &nextEmptyId, const glm::mat4 &mtx)
 {
 	const auto it = gltf.bonesByName.find(name);
 
@@ -245,8 +245,7 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 				.vertexOffset = startVertex[meshIdx],
 				.vertexCount = mesh->mNumVertices,
 				.indexOffset = startIndex[meshIdx],
-				.indexCount = mesh->mNumFaces * 3,
-				.matIdx = mesh->mMaterialIndex
+				.indexCount = mesh->mNumFaces * 3
 			});
 
 			gltf.nodesStorage[gltfNode].meshes.push_back(gltf.meshesStorage.size() - 1);
@@ -361,7 +360,6 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 void buildTransformsList(SkeletalMesh &gltf)
 {
 	gltf.transforms.clear();
-	gltf.opaqueNodes.clear();
 
 	std::function<void(NodeRef gltfNode)> traverseTree = [&](NodeRef nodeRef)
 	{
@@ -371,12 +369,9 @@ void buildTransformsList(SkeletalMesh &gltf)
 			const Mesh &mesh = gltf.meshesStorage[meshId];
 			gltf.transforms.push_back({
 				.modelMtxId = node.modelMtxId,
-				.matId = mesh.matIdx,
 				.nodeRef = nodeRef,
 				.meshRef = meshId
 			});
-			
-			gltf.opaqueNodes.push_back(gltf.transforms.size() - 1);
 		}
 		
 		for (NodeRef child : node.children)
@@ -404,7 +399,7 @@ void buildTransformsList(SkeletalMesh &gltf)
 	});
 }
 
-void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const mat4 &model, const mat4 &view, const mat4 &proj, bool rebuildRenderList)
+void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const glm::mat4 &model, const glm::mat4 &view, const glm::mat4 &proj, bool rebuildRenderList)
 {
 	auto &ctx = gltf.ctx_;
 
@@ -500,13 +495,13 @@ void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const mat4 &mod
 
 			buf.cmdBindRenderPipeline(gltf.pipelineSolid);
 			buf.cmdPushConstants(pushConstants);
-			for (uint32_t transformId : gltf.opaqueNodes)
+			for (size_t transformId = 0; transformId < gltf.transforms.size(); transformId++)
 			{
 				const Transforms transform = gltf.transforms[transformId];
-
-				buf.cmdPushDebugGroupLabel(gltf.nodesStorage[transform.nodeRef].name.c_str(), 0xff0000ff);
 				const Mesh submesh = gltf.meshesStorage[transform.meshRef];
-				buf.cmdDrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, transformId);
+
+				buf.cmdPushDebugGroupLabel(gltf.nodesStorage[transform.nodeRef].name.c_str(), 0xff0000ff);				
+				buf.cmdDrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, static_cast<uint32_t>(transformId));
 				buf.cmdPopDebugGroupLabel();
 			}
 		}

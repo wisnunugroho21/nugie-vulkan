@@ -15,7 +15,7 @@
 
 inline glm::mat4 aiMatrix4x4ToMat4(const aiMatrix4x4 &from)
 {
-	mat4 to;
+	glm::mat4 to;
 
 	to[0][0] = (float)from.a1;
 	to[0][1] = (float)from.b1;
@@ -75,30 +75,28 @@ struct Mesh
 	uint32_t vertexCount;
 	uint32_t indexOffset;
 	uint32_t indexCount;
-	uint32_t matIdx;
 };
 
 struct Node
 {
 	std::string name;
 	uint32_t modelMtxId;
-	mat4 transform = glm::mat4(1);
+	glm::mat4 transform = glm::mat4(1);
 	std::vector<NodeRef> children;
 	std::vector<MeshRef> meshes;
 };
 
 struct FrameData
 {
-	mat4 model;
-	mat4 view;
-	mat4 proj;
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
 	vec4 cameraPos;
 };
 
 struct Transforms
 {
 	uint32_t modelMtxId;
-	uint32_t matId;
 	NodeRef nodeRef; // for CPU only
 	MeshRef meshRef; // for CPU only
 };
@@ -120,7 +118,7 @@ static_assert(sizeof(VertexBoneData) == sizeof(uint32_t) * 25);
 struct Bone
 {
 	uint32_t boneId = ~0u;
-	mat4 transform = glm::mat4(1);
+	glm::mat4 transform = glm::mat4(1);
 };
 
 struct SkeletalMesh
@@ -132,8 +130,7 @@ struct SkeletalMesh
 
 	FrameData frameData;
 	std::vector<Transforms> transforms;
-	std::vector<mat4> matrices;
-	std::vector<MorphState> morphStates;
+	std::vector<mat4> matrices;	
 
 	std::vector<Node> nodesStorage;
 	std::vector<Mesh> meshesStorage;
@@ -142,8 +139,8 @@ struct SkeletalMesh
 	std::vector<MorphTarget> morphTargets;
 	std::unordered_map<std::string, uint32_t> meshesRemap;
 
+	std::vector<MorphState> morphStates;
 	std::vector<Animation> animations;
-	std::vector<uint32_t> opaqueNodes;
 
 	lvk::Holder<lvk::BufferHandle> perFrameBuffer;
 	lvk::Holder<lvk::BufferHandle> transformBuffer;

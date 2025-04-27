@@ -13,7 +13,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
-#include <shared/UtilsGLTF.h>
+#include <shared/SkeletalMesh.h>
 
 int main()
 {

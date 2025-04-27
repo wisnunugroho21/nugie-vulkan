@@ -1,6 +1,6 @@
 #include "UtilsAnim.h"
 
-#include "UtilsGLTF.h"
+#include "SkeletalMesh.h"
 #include "VulkanApp.h"
 #include <assimp/GltfMaterial.h>
 #include <assimp/cimport.h>
