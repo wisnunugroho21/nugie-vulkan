@@ -14,11 +14,8 @@
 #include <stb_image_write.h>
 
 #include "shared/UtilsFPS.h"
-#include <shared/Bitmap.h>
-#include <shared/Camera.h>
-#include <shared/Graph.h>
 #include <shared/Utils.h>
-#include <shared/UtilsCubemap.h>
+#include <shared/Camera.h>
 
 #include <functional>
 
@@ -64,7 +61,6 @@ struct VulkanAppConfig
 {
 	vec3 initialCameraPos = vec3(0.0f, 0.0f, -2.5f);
 	vec3 initialCameraTarget = vec3(0.0f, 0.0f, 0.0f);
-	bool showGLTFInspector = false;
 	lvk::ContextConfig contextConfig = {};
 };
 
@@ -75,17 +71,20 @@ public:
 	virtual ~VulkanApp();
 
 	virtual void run(DrawFrameFunc drawFrame);
+
 	virtual void drawGrid(
 		lvk::ICommandBuffer &buf, const mat4 &proj, const vec3 &origin = vec3(0.0f), uint32_t numSamples = 1,
 		lvk::Format colorFormat = lvk::Format_Invalid);
+
 	virtual void drawGrid(
 		lvk::ICommandBuffer &buf, const mat4 &mvp, const vec3 &origin, const vec3 &camPos, uint32_t numSamples = 1,
 		lvk::Format colorFormat = lvk::Format_Invalid);
+
 	virtual void drawFPS();
 	virtual void drawMemo();
+	
 	virtual void drawGTFInspector(GLTFIntrospective &intro);
 	virtual void drawGTFInspector_Animations(GLTFIntrospective &intro);
-	virtual void drawGTFInspector_Materials(GLTFIntrospective &intro);
 	virtual void drawGTFInspector_Cameras(GLTFIntrospective &intro);
 
 	lvk::Format getDepthFormat() const;
@@ -97,15 +96,15 @@ public:
 public:
 	GLFWwindow *window_ = nullptr;
 	std::unique_ptr<lvk::IContext> ctx_;
-	lvk::Holder<lvk::TextureHandle> depthTexture_;
-	FramesPerSecondCounter fpsCounter_ = FramesPerSecondCounter(0.5f);
-	std::unique_ptr<lvk::ImGuiRenderer> imgui_;
-	ImPlotContext *implotCtx_ = nullptr;
+	std::unique_ptr<lvk::ImGuiRenderer> imgui_;	
 
 	VulkanAppConfig cfg_ = {};
 
+	FramesPerSecondCounter fpsCounter_ = FramesPerSecondCounter(0.5f);
 	CameraPositioner_FirstPerson positioner_ = {cfg_.initialCameraPos, cfg_.initialCameraTarget, vec3(0.0f, 1.0f, 0.0f)};
 	Camera camera_ = Camera(positioner_);
+
+	lvk::Holder<lvk::TextureHandle> depthTexture_;
 
 	struct MouseState
 	{

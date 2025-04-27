@@ -19,13 +19,12 @@ int main()
 {
 	VulkanApp app({
 		.initialCameraPos = vec3(0.0f, 3.0f, 3.0f),
-		.initialCameraTarget = vec3(0.0f, 3.0f, 0.0f),
-		.showGLTFInspector = true,
+		.initialCameraTarget = vec3(0.0f, 3.0f, 0.0f)
 	});
 
-	GLTFContext gltf(app);
+	Context gltf(app.ctx_.get(), app.getDepthFormat());
 
-	loadGLTF(gltf, "../../data/Test9/Bikini_Girl_Source.gltf", "../../data/Test9/");
+	load(gltf, "../../data/bikini_girl/Bikini_Girl_Source.gltf", "../../data/bikini_girl/");
 
 	gltf.enableMorphing = false;
 
@@ -36,7 +35,7 @@ int main()
 		const mat4 v = app.camera_.getViewMatrix();
 		const mat4 p = glm::perspective(45.0f, aspectRatio, 0.01f, 200.0f);
 
-		renderGLTF(gltf, m, v, p);
+		render(gltf, app.getDepthTexture(), m, v, p);
 	});
 
 	return 0;

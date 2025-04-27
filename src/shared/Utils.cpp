@@ -116,7 +116,7 @@ lvk::ShaderStage lvkShaderStageFromFileName(const char *fileName)
 	return lvk::Stage_Vert;
 }
 
-lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(const std::unique_ptr<lvk::IContext> &ctx, const char *fileName)
+lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(lvk::IContext* ctx, const char *fileName)
 {
 	const std::string code = readShaderFile(fileName);
 	const lvk::ShaderStage stage = lvkShaderStageFromFileName(fileName);
