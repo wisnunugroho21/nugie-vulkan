@@ -8,74 +8,8 @@
 #include <assimp/scene.h>
 #include <assimp/types.h>
 
+#include "UtilsAnim.h"
 #include <lvk/LVK.h>
-
-// --------- Animation ---------
-
-struct AnimationKeyPosition
-{
-	vec3 pos;
-	float time;
-};
-
-struct AnimationKeyRotation
-{
-	glm::quat rot;
-	float time;
-};
-
-struct AnimationKeyScale
-{
-	vec3 scale;
-	float time;
-};
-
-struct AnimationChannel
-{
-	std::vector<AnimationKeyPosition> pos;
-	std::vector<AnimationKeyRotation> rot;
-	std::vector<AnimationKeyScale> scale;
-};
-
-#define MAX_MORPH_WEIGHTS 8
-#define MAX_MORPHS 100
-
-struct MorphingChannelKey
-{
-	float time = 0.0f;
-	uint32_t mesh[MAX_MORPH_WEIGHTS] = {0, 0, 0, 0, 0, 0, 0, 0};
-	float weight[MAX_MORPH_WEIGHTS] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-};
-
-struct MorphingChannel
-{
-	std::string name;
-	std::vector<MorphingChannelKey> key;
-};
-
-struct Animation
-{
-	std::unordered_map<int, AnimationChannel> channels;
-	std::vector<MorphingChannel> morphChannels;
-	float duration; // In seconds
-	float ticksPerSecond;
-	std::string name;
-};
-
-struct MorphState
-{
-	uint32_t meshId = ~0u;
-	uint32_t morphTarget[MAX_MORPH_WEIGHTS] = {0, 0, 0, 0, 0, 0, 0, 0};
-	float weights[MAX_MORPH_WEIGHTS] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-};
-
-struct AnimationState
-{
-	uint32_t animId = ~0u;
-	float currentTime = 0.0f;
-	bool playOnce = false;
-	bool active = false;
-};
 
 // --------- Skeleton ---------
 
@@ -189,9 +123,9 @@ struct Bone
 	mat4 transform = glm::mat4(1);
 };
 
-struct Context
+struct SkeletalMesh
 {
-	explicit Context(lvk::IContext* ctx, lvk::Format depthFormat)
+	explicit SkeletalMesh(lvk::IContext* ctx, lvk::Format depthFormat)
 		: ctx_(ctx), depthFormat_(depthFormat)
 	{
 	}
@@ -242,14 +176,10 @@ struct Context
 	bool enableMorphing = true;
 };
 
-void load(Context &context, const char *gltfName, const char *glTFDataPath);
-void render(Context &context, lvk::TextureHandle depthTexture, const glm::mat4 &model, const glm::mat4 &view, const glm::mat4 &proj, bool rebuildRenderList = false);
-void animate(Context &gltf, AnimationState &anim, float dt);
-void animateBlending(Context &gltf, AnimationState &anim1, AnimationState &anim2, float weight, float dt);
+void load(SkeletalMesh &context, const char *gltfName, const char *glTFDataPath);
+void render(SkeletalMesh &context, lvk::TextureHandle depthTexture, const glm::mat4 &model, const glm::mat4 &view, const glm::mat4 &proj, bool rebuildRenderList = false);
+void animate(SkeletalMesh &gltf, AnimationState &anim, float dt);
+void animateBlending(SkeletalMesh &gltf, AnimationState &anim1, AnimationState &anim2, float weight, float dt);
 
 void printPrefix(int ofs);
 void printMat4(const aiMatrix4x4 &m);
-
-void initAnimations(Context &glTF, const aiScene *scene);
-void updateAnimation(Context &glTF, AnimationState &anim, float dt);
-void updateAnimationBlending(Context &glTF, AnimationState &anim1, AnimationState &anim2, float weight, float dt);
