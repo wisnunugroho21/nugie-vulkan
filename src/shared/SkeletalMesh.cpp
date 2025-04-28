@@ -495,13 +495,13 @@ void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const glm::mat4
 
 			buf.cmdBindRenderPipeline(gltf.pipelineSolid);
 			buf.cmdPushConstants(pushConstants);
-			for (size_t transformId = 0; transformId < gltf.transforms.size(); transformId++)
+			for (uint32_t transformId = 0; transformId < static_cast<uint32_t>(gltf.transforms.size()); transformId++)
 			{
 				const Transforms transform = gltf.transforms[transformId];
 				const Mesh submesh = gltf.meshesStorage[transform.meshRef];
 
 				buf.cmdPushDebugGroupLabel(gltf.nodesStorage[transform.nodeRef].name.c_str(), 0xff0000ff);				
-				buf.cmdDrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, static_cast<uint32_t>(transformId));
+				buf.cmdDrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, transformId);
 				buf.cmdPopDebugGroupLabel();
 			}
 		}

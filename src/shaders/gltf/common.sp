@@ -11,7 +11,6 @@ layout(std430, buffer_reference) buffer PerDrawData {
 
 struct TransformsBuffer {
   uint mtxId;
-  uint matId;
   uint nodeRef; // for CPU only
   uint meshRef; // for CPU only
 };
