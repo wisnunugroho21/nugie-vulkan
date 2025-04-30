@@ -9,14 +9,14 @@ layout(std430, buffer_reference) buffer PerDrawData {
   vec4 cameraPos;
 };
 
-struct TransformsBuffer {
+struct NodeTransformRef {
   uint mtxId;
   uint nodeRef; // for CPU only
   uint meshRef; // for CPU only
 };
 
-layout(std430, buffer_reference) readonly buffer Transforms {
-  TransformsBuffer transforms[];
+layout(std430, buffer_reference) readonly buffer NodeTransformRefs {
+  NodeTransformRef refs[];
 };
 
 layout(std430, buffer_reference) readonly buffer Matrices {
@@ -25,7 +25,7 @@ layout(std430, buffer_reference) readonly buffer Matrices {
 
 layout(push_constant) uniform PerFrameData {
   PerDrawData drawable;
-  Transforms transforms;
+  NodeTransformRefs nodeTransform;
   Matrices matrices;
 } perFrame;
 

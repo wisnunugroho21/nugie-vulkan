@@ -23,6 +23,6 @@ vec2 getTexCoord(uint i) {
 }
 
 mat4 getModel() {
-  uint mtxId = perFrame.transforms.transforms[gl_BaseInstance].mtxId;
+  uint mtxId = perFrame.nodeTransform.refs[gl_BaseInstance].mtxId;
   return perFrame.drawable.model * perFrame.matrices.matrix[mtxId];
 }
