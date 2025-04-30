@@ -94,7 +94,7 @@ struct FrameData
 	vec4 cameraPos;
 };
 
-struct Transforms
+struct NodeTransformRef
 {
 	uint32_t modelMtxId;
 	NodeRef nodeRef; // for CPU only
@@ -129,22 +129,22 @@ struct SkeletalMesh
 	}
 
 	FrameData frameData;
-	std::vector<Transforms> transforms;
-	std::vector<mat4> matrices;	
+	std::vector<NodeTransformRef> nodeTransformRefs;
+	std::vector<mat4> nodeTransformMatrices;	
 
-	std::vector<Node> nodesStorage;
-	std::vector<Mesh> meshesStorage;
+	std::vector<Node> nodes;
+	std::vector<Mesh> meshes;
 	std::unordered_map<std::string, Bone> bonesByName;
 
 	std::vector<MorphTarget> morphTargets;
-	std::unordered_map<std::string, uint32_t> meshesRemap;
+	std::unordered_map<std::string, uint32_t> meshIdNameMap;
 
 	std::vector<MorphState> morphStates;
 	std::vector<Animation> animations;
 
 	lvk::Holder<lvk::BufferHandle> perFrameBuffer;
-	lvk::Holder<lvk::BufferHandle> transformBuffer;
-	lvk::Holder<lvk::BufferHandle> matricesBuffer;
+	lvk::Holder<lvk::BufferHandle> nodeTransformRefBuffer;
+	lvk::Holder<lvk::BufferHandle> nodeTransformMatricesBuffer;
 	lvk::Holder<lvk::BufferHandle> morphStatesBuffer;
 	
 	lvk::Holder<lvk::BufferHandle> vertexBuffer;

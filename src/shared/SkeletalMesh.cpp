@@ -1,75 +1,69 @@
 #include "SkeletalMesh.h"
 
-uint32_t getNextMtxId(SkeletalMesh &gltf, const char *name, uint32_t &nextEmptyId, const glm::mat4 &mtx)
-{
+uint32_t saveTransformMatrix(SkeletalMesh &gltf, const char *name, uint32_t &nextEmptyId, const glm::mat4 &mtx) {
 	const auto it = gltf.bonesByName.find(name);
 
 	const uint32_t mtxId = (it == gltf.bonesByName.end()) ? nextEmptyId++ : it->second.boneId;
 
-	if (gltf.matrices.size() <= mtxId)
-	{
-		gltf.matrices.resize(mtxId + 1);
+	if (gltf.nodeTransformMatrices.size() <= mtxId) {
+		gltf.nodeTransformMatrices.resize(mtxId + 1);
 	}
 
-	gltf.matrices[mtxId] = mtx;
-
+	gltf.nodeTransformMatrices[mtxId] = mtx;
 	return mtxId;
 }
 
 static uint32_t getNumVertices(const aiScene &scene)
 {
 	uint32_t num = 0;
-	for (uint32_t i = 0; i != scene.mNumMeshes; i++)
-	{
+	for (uint32_t i = 0; i != scene.mNumMeshes; i++) {
 		num += scene.mMeshes[i]->mNumVertices;
 	}
+
 	return num;
 }
 
 static uint32_t getNumIndices(const aiScene &scene)
 {
 	uint32_t num = 0;
-	for (uint32_t i = 0; i != scene.mNumMeshes; i++)
-	{
-		for (uint32_t j = 0; j != scene.mMeshes[i]->mNumFaces; j++)
-		{
+	for (uint32_t i = 0; i != scene.mNumMeshes; i++) {
+		for (uint32_t j = 0; j != scene.mMeshes[i]->mNumFaces; j++) {
 			LVK_ASSERT(scene.mMeshes[i]->mFaces[j].mNumIndices == 3);
 			num += scene.mMeshes[i]->mFaces[j].mNumIndices;
 		}
 	}
+
 	return num;
 }
 
 static uint32_t getNumMorphVertices(const aiScene &scene)
 {
 	uint32_t num = 0;
-	for (uint32_t i = 0; i != scene.mNumMeshes; i++)
-	{
+	for (uint32_t i = 0; i != scene.mNumMeshes; i++) {
 		num += scene.mMeshes[i]->mNumVertices * scene.mMeshes[i]->mNumAnimMeshes;
 	}
+
 	return num;
 }
 
-static uint32_t getNodeId(SkeletalMesh &gltf, const char *name)
-{
-	for (uint32_t i = 0; i != gltf.nodesStorage.size(); i++)
-	{
-		if (gltf.nodesStorage[i].name == name)
+static uint32_t getNodeId(SkeletalMesh &gltf, const char *name) {
+	for (uint32_t i = 0; i != gltf.nodes.size(); i++) {
+		if (gltf.nodes[i].name == name)
 			return i;
 	}
+
 	return ~0;
 }
 
 void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 {
 	const aiScene *scene = aiImportFile(glTFName, aiProcess_Triangulate);
-	if (!scene || !scene->HasMeshes())
-	{
+	if (!scene || !scene->HasMeshes()) {
 		printf("Unable to load %s\n", glTFName);
 		exit(255);
 	}
-	SCOPE_EXIT
-	{
+
+	SCOPE_EXIT {
 		aiReleaseImport(scene);
 	};
 
@@ -94,13 +88,11 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 	uint32_t morphTargetsOffset = 0;
 	uint32_t vertOffset = 0;
 
-	for (uint32_t m = 0; m < scene->mNumMeshes; ++m)
-	{
+	for (uint32_t m = 0; m < scene->mNumMeshes; ++m) {
 		const aiMesh *mesh = scene->mMeshes[m];
-		gltf.meshesRemap[mesh->mName.C_Str()] = m;
+		gltf.meshIdNameMap[mesh->mName.C_Str()] = m;
 
-		for (uint32_t i = 0; i < mesh->mNumVertices; i++)
-		{
+		for (uint32_t i = 0; i < mesh->mNumVertices; i++) {
 			const aiVector3D v = mesh->mVertices[i];
 			const aiVector3D n = mesh->mNormals ? mesh->mNormals[i] : aiVector3D(0.0f, 1.0f, 0.0f);
 			const aiColor4D c = mesh->mColors[0] ? mesh->mColors[0][i] : aiColor4D(1.0f, 1.0f, 1.0f, 1.0f);
@@ -114,8 +106,7 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 				.uv1 = vec2(uv1.x, 1.0f - uv1.y),
 			});
 
-			if (mesh->mNumBones == 0)
-			{
+			if (mesh->mNumBones == 0) {
 				auto &vertex = skinningData[vertices.size() - 1];
 				vertex.meshId = m;
 				vertex.position = vec4(v.x, v.y, v.z, 0.0f);
@@ -124,36 +115,32 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 		}
 
 		startVertex.push_back((uint32_t)vertices.size());
-		for (uint32_t i = 0; i < mesh->mNumFaces; i++)
-		{
-			for (int j = 0; j != 3; j++)
-			{
+		for (uint32_t i = 0; i < mesh->mNumFaces; i++) {
+			for (int j = 0; j != 3; j++) {
 				indices.push_back(mesh->mFaces[i].mIndices[j]);
 			}
 		}
+
 		startIndex.push_back((uint32_t)indices.size());
 
 		gltf.hasBones = mesh->mNumBones > 0;
 		// load bones
-		for (uint32_t id = 0; id < mesh->mNumBones; id++)
-		{
+		for (uint32_t id = 0; id < mesh->mNumBones; id++) {
 			const aiBone &bone = *mesh->mBones[id];
 			const char *boneName = bone.mName.C_Str();
 
-			const bool hasBone = gltf.bonesByName.contains(boneName);
+			const bool isExistingBone = gltf.bonesByName.contains(boneName);
 
-			const uint32_t boneId = hasBone ? gltf.bonesByName[boneName].boneId : numBones++;
+			const uint32_t boneId = isExistingBone ? gltf.bonesByName[boneName].boneId : numBones++;
 
-			if (!hasBone)
-			{
+			if (!isExistingBone) {
 				gltf.bonesByName[boneName] = {
 					.boneId = boneId,
 					.transform = aiMatrix4x4ToMat4(bone.mOffsetMatrix),
 				};
 			}
 
-			for (uint32_t w = 0; w < bone.mNumWeights; w++)
-			{
+			for (uint32_t w = 0; w < bone.mNumWeights; w++) {
 				const uint32_t vertexId = bone.mWeights[w].mVertexId;
 				assert(vertexId <= vertices.size());
 
@@ -163,10 +150,9 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 				vtx.position = vec4(vertices[vertexId + vertOffset].position, 1.0f);
 				vtx.normal = vec4(vertices[vertexId + vertOffset].normal, 0.0f);
 				vtx.meshId = m;
-				for (uint32_t i = 0; i < MAX_BONES_PER_VERTEX; i++)
-				{
-					if (vtx.boneId[i] == ~0u)
-					{
+
+				for (uint32_t i = 0; i < MAX_BONES_PER_VERTEX; i++) {
+					if (vtx.boneId[i] == ~0u) {
 						vtx.weight[i] = bone.mWeights[w].mWeight;
 						vtx.boneId[i] = boneId;
 						break;
@@ -177,9 +163,9 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 
 		vertOffset += mesh->mNumVertices;
 	}
+
 	// load morph targets
-	for (uint32_t meshId = 0; meshId != scene->mNumMeshes; meshId++)
-	{
+	for (uint32_t meshId = 0; meshId != scene->mNumMeshes; meshId++) {
 		const aiMesh *m = scene->mMeshes[meshId];
 
 		if (!m->mNumAnimMeshes)
@@ -188,18 +174,17 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 		MorphTarget &morphTarget = gltf.morphTargets[meshId];
 		morphTarget.meshId = meshId;
 
-		for (uint32_t a = 0; a < m->mNumAnimMeshes; a++)
-		{
+		for (uint32_t a = 0; a < m->mNumAnimMeshes; a++) {
 			const aiAnimMesh *mesh = m->mAnimMeshes[a];
 
-			for (uint32_t i = 0; i < mesh->mNumVertices; i++)
-			{
+			for (uint32_t i = 0; i < mesh->mNumVertices; i++) {
 				const aiVector3D v = mesh->mVertices[i];
 				const aiVector3D n = mesh->mNormals ? mesh->mNormals[i] : aiVector3D(0.0f, 1.0f, 0.0f);
 				const aiVector3D srcNorm = m->mNormals ? m->mNormals[i] : aiVector3D(0.0f, 1.0f, 0.0f);
 				const aiColor4D c = mesh->mColors[0] ? mesh->mColors[0][i] : aiColor4D(1.0f, 1.0f, 1.0f, 1.0f);
 				const aiVector3D uv0 = mesh->mTextureCoords[0] ? mesh->mTextureCoords[0][i] : aiVector3D(0.0f, 0.0f, 0.0f);
 				const aiVector3D uv1 = mesh->mTextureCoords[1] ? mesh->mTextureCoords[1][i] : aiVector3D(0.0f, 0.0f, 0.0f);
+
 				morphData.push_back({
 					.position = vec3(v.x - m->mVertices[i].x, v.y - m->mVertices[i].y, v.z - m->mVertices[i].z),
 					.normal = vec3(n.x - srcNorm.x, n.y - srcNorm.y, n.z - srcNorm.z),
@@ -208,13 +193,13 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 					.uv1 = vec2(uv1.x, 1.0f - uv1.y),
 				});
 			}
+
 			morphTarget.offset.push_back(morphTargetsOffset);
 			morphTargetsOffset += mesh->mNumVertices;
 		}
 	}
 
-	if (!scene->mRootNode)
-	{
+	if (!scene->mRootNode) {
 		printf("Scene has no root node\n");
 		exit(255);
 	}
@@ -225,22 +210,20 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 
 	const char *rootName = scene->mRootNode->mName.C_Str() ? scene->mRootNode->mName.C_Str() : "root";
 
-	gltf.nodesStorage.push_back({
+	gltf.nodes.push_back({
 		.name = rootName,
-		.modelMtxId = getNextMtxId(gltf, rootName, nonBoneMtxId, aiMatrix4x4ToMat4(scene->mRootNode->mTransformation)),
+		.modelMtxId = saveTransformMatrix(gltf, rootName, nonBoneMtxId, aiMatrix4x4ToMat4(scene->mRootNode->mTransformation)),
 		.transform = aiMatrix4x4ToMat4(scene->mRootNode->mTransformation),
 	});
 
-	gltf.root = gltf.nodesStorage.size() - 1;
+	gltf.root = gltf.nodes.size() - 1;
 
-	std::function<void(const aiNode *rootNode, NodeRef gltfNode)> traverseTree = [&](const aiNode *rootNode, NodeRef gltfNode)
-	{
-		for (unsigned int m = 0; m < rootNode->mNumMeshes; ++m)
-		{
+	std::function<void(const aiNode *rootNode, NodeRef gltfNode)> traverseTree = [&](const aiNode *rootNode, NodeRef gltfNode) {
+		for (unsigned int m = 0; m < rootNode->mNumMeshes; ++m) {
 			const uint32_t meshIdx = rootNode->mMeshes[m];
 			const aiMesh *mesh = scene->mMeshes[meshIdx];
 
-			gltf.meshesStorage.push_back({
+			gltf.meshes.push_back({
 				.primitive = lvk::Topology_Triangle,
 				.vertexOffset = startVertex[meshIdx],
 				.vertexCount = mesh->mNumVertices,
@@ -248,24 +231,24 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 				.indexCount = mesh->mNumFaces * 3
 			});
 
-			gltf.nodesStorage[gltfNode].meshes.push_back(gltf.meshesStorage.size() - 1);
+			gltf.nodes[gltfNode].meshes.push_back(gltf.meshes.size() - 1);
 		}
 
-		for (NodeRef i = 0; i < rootNode->mNumChildren; i++)
-		{
+		for (NodeRef i = 0; i < rootNode->mNumChildren; i++) {
 			const aiNode *node = rootNode->mChildren[i];
 			const char *childName = node->mName.C_Str() ? node->mName.C_Str() : "node";
 			const Node childNode{
 				.name = childName,
-				.modelMtxId = getNextMtxId(
+				.modelMtxId = saveTransformMatrix(
 					gltf, childName, nonBoneMtxId,
-					gltf.matrices[gltf.nodesStorage[gltfNode].modelMtxId] * aiMatrix4x4ToMat4(node->mTransformation)),
+					gltf.nodeTransformMatrices[gltf.nodes[gltfNode].modelMtxId] * aiMatrix4x4ToMat4(node->mTransformation)
+				),
 				.transform = aiMatrix4x4ToMat4(node->mTransformation),
 			};
 
-			gltf.nodesStorage.push_back(childNode);
-			const size_t nodeIdx = gltf.nodesStorage.size() - 1;
-			gltf.nodesStorage[gltfNode].children.push_back(nodeIdx);
+			gltf.nodes.push_back(childNode);
+			const size_t nodeIdx = gltf.nodes.size() - 1;
+			gltf.nodes[gltfNode].children.push_back(nodeIdx);
 			traverseTree(node, nodeIdx);
 		}
 	};
@@ -326,11 +309,11 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 
 	const lvk::VertexInput vdesc = {
 		.attributes = {
-			{.location = 0, .format = lvk::VertexFormat::Float3, .offset = 0},
-			{.location = 1, .format = lvk::VertexFormat::Float3, .offset = 12},
-			{.location = 2, .format = lvk::VertexFormat::Float4, .offset = 24},
-			{.location = 3, .format = lvk::VertexFormat::Float2, .offset = 40},
-			{.location = 4, .format = lvk::VertexFormat::Float2, .offset = 48},
+			{ .location = 0, .format = lvk::VertexFormat::Float3, .offset = 0  },
+			{ .location = 1, .format = lvk::VertexFormat::Float3, .offset = 12 },
+			{ .location = 2, .format = lvk::VertexFormat::Float4, .offset = 24 },
+			{ .location = 3, .format = lvk::VertexFormat::Float2, .offset = 40 },
+			{ .location = 4, .format = lvk::VertexFormat::Float2, .offset = 48 },
 		},
 		.inputBindings = {{.stride = sizeof(Vertex)}},
 	};
@@ -357,56 +340,50 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 	});
 }
 
-void buildTransformsList(SkeletalMesh &gltf)
-{
-	gltf.transforms.clear();
+void buildTransformsList(SkeletalMesh &gltf) {
+	gltf.nodeTransformRefs.clear();
 
-	std::function<void(NodeRef gltfNode)> traverseTree = [&](NodeRef nodeRef)
-	{
-		Node &node = gltf.nodesStorage[nodeRef];
-		for (NodeRef meshId : node.meshes)
-		{
-			const Mesh &mesh = gltf.meshesStorage[meshId];
-			gltf.transforms.push_back({
+	std::function<void(NodeRef gltfNode)> traverseTree = [&](NodeRef nodeRef) {
+		Node &node = gltf.nodes[nodeRef];
+		for (NodeRef meshId : node.meshes) {
+			const Mesh &mesh = gltf.meshes[meshId];
+			gltf.nodeTransformRefs.push_back({
 				.modelMtxId = node.modelMtxId,
 				.nodeRef = nodeRef,
 				.meshRef = meshId
 			});
 		}
 		
-		for (NodeRef child : node.children)
-		{
+		for (NodeRef child : node.children) {
 			traverseTree(child);
 		}
 	};
 
 	traverseTree(gltf.root);
 
-	gltf.transformBuffer = gltf.ctx_->createBuffer({
+	gltf.nodeTransformRefBuffer = gltf.ctx_->createBuffer({
 		.usage = lvk::BufferUsageBits_Storage,
 		.storage = lvk::StorageType_HostVisible,
-		.size = gltf.transforms.size() * sizeof(Transforms),
-		.data = gltf.transforms.data(),
+		.size = gltf.nodeTransformRefs.size() * sizeof(NodeTransformRef),
+		.data = gltf.nodeTransformRefs.data(),
 		.debugName = "Per Frame data",
 	});
 
-	gltf.matricesBuffer = gltf.ctx_->createBuffer({
+	gltf.nodeTransformMatricesBuffer = gltf.ctx_->createBuffer({
 		.usage = lvk::BufferUsageBits_Storage,
 		.storage = lvk::StorageType_HostVisible,
-		.size = gltf.matrices.size() * sizeof(mat4),
-		.data = gltf.matrices.data(),
+		.size = gltf.nodeTransformMatrices.size() * sizeof(mat4),
+		.data = gltf.nodeTransformMatrices.data(),
 		.debugName = "Node matrices",
 	});
 }
 
-void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const glm::mat4 &model, const glm::mat4 &view, const glm::mat4 &proj, bool rebuildRenderList)
-{
+void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const glm::mat4 &model, const glm::mat4 &view, const glm::mat4 &proj, bool rebuildRenderList) {
 	auto &ctx = gltf.ctx_;
 
 	const vec4 camPos = glm::inverse(view)[3];
 
-	if (rebuildRenderList || gltf.transforms.empty())
-	{
+	if (rebuildRenderList || gltf.nodeTransformRefs.empty()) {
 		buildTransformsList(gltf);
 	}
 
@@ -417,58 +394,61 @@ void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const glm::mat4
 		.cameraPos = camPos,
 	};
 
-	struct PushConstants
-	{
+	struct PushConstants {
 		uint64_t draw;
-		uint64_t transforms;
-		uint64_t matrices;
+		uint64_t nodeTransformRefs;
+		uint64_t nodeTransformMatrices;
 	} pushConstants = {
 		.draw = ctx->gpuAddress(gltf.perFrameBuffer),
-		.transforms = ctx->gpuAddress(gltf.transformBuffer),
-		.matrices = ctx->gpuAddress(gltf.matricesBuffer)
+		.nodeTransformRefs = ctx->gpuAddress(gltf.nodeTransformRefBuffer),
+		.nodeTransformMatrices = ctx->gpuAddress(gltf.nodeTransformMatricesBuffer)
 	};
 
 	lvk::ICommandBuffer &buf = ctx->acquireCommandBuffer();
 
 	buf.cmdUpdateBuffer(gltf.perFrameBuffer, gltf.frameData);
 
-	if (gltf.animated)
-	{
-		buf.cmdUpdateBuffer(gltf.matricesBuffer, 0, gltf.matrices.size() * sizeof(mat4), gltf.matrices.data());
-		if (gltf.morphing)
-		{
+	if (gltf.animated) {
+		buf.cmdUpdateBuffer(gltf.nodeTransformMatricesBuffer, 0, gltf.nodeTransformMatrices.size() * sizeof(mat4), gltf.nodeTransformMatrices.data());
+
+		if (gltf.morphing) {
 			buf.cmdUpdateBuffer(gltf.morphStatesBuffer, 0, gltf.morphStates.size() * sizeof(MorphState), gltf.morphStates.data());
 		}
 		
-		if ((gltf.skinning && gltf.hasBones) || gltf.morphing)
-		{
+		if ((gltf.skinning && gltf.hasBones) || gltf.morphing) {
 			// Run compute shader to do skinning and morphing
 
 			struct ComputeSetup
 			{
-				uint64_t matrices;
+				uint64_t nodeTransformMatrices;
 				uint64_t morphStates;
 				uint64_t morphVertexBuffer;
 				uint64_t inBuffer;
 				uint64_t outBuffer;
 				uint32_t numMorphStates;
 			} pc = {
-				.matrices = ctx->gpuAddress(gltf.matricesBuffer),
+				.nodeTransformMatrices = ctx->gpuAddress(gltf.nodeTransformMatricesBuffer),
 				.morphStates = ctx->gpuAddress(gltf.morphStatesBuffer),
 				.morphVertexBuffer = ctx->gpuAddress(gltf.vertexMorphingBuffer),
 				.inBuffer = ctx->gpuAddress(gltf.vertexSkinningBuffer),
 				.outBuffer = ctx->gpuAddress(gltf.vertexBuffer),
 				.numMorphStates = static_cast<uint32_t>(gltf.morphStates.size()),
 			};
+
 			buf.cmdBindComputePipeline(gltf.pipelineComputeAnimations);
 			buf.cmdPushConstants(pc);
+
 			// clang-format off
-      buf.cmdDispatchThreadGroups(
-          { .width = gltf.maxVertices / 16 },
-          { .buffers = { lvk::BufferHandle(gltf.vertexBuffer),
-                         lvk::BufferHandle(gltf.morphStatesBuffer),
-                         lvk::BufferHandle(gltf.matricesBuffer),
-                         lvk::BufferHandle(gltf.vertexSkinningBuffer) } });
+			buf.cmdDispatchThreadGroups(
+			{ .width = gltf.maxVertices / 16 },
+			{ 
+				.buffers = { 
+					lvk::BufferHandle(gltf.vertexBuffer),
+					lvk::BufferHandle(gltf.morphStatesBuffer),
+					lvk::BufferHandle(gltf.nodeTransformMatricesBuffer),
+					lvk::BufferHandle(gltf.vertexSkinningBuffer) 
+				} 
+			});
 			// clang-format on
 		}
 	}
@@ -476,8 +456,8 @@ void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const glm::mat4
 	{
 		// 1st pass
 		const lvk::RenderPass renderPass = {
-			.color = {{.loadOp = lvk::LoadOp_Clear, .clearColor = {1.0f, 1.0f, 1.0f, 1.0f}}},
-			.depth = {.loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f},
+			.color = {{ .loadOp = lvk::LoadOp_Clear, .clearColor = {1.0f, 1.0f, 1.0f, 1.0f} }},
+			.depth = { .loadOp = lvk::LoadOp_Clear, .clearDepth = 1.0f},
 		};
 
 		const lvk::Framebuffer framebuffer = {
@@ -495,12 +475,12 @@ void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const glm::mat4
 
 			buf.cmdBindRenderPipeline(gltf.pipelineSolid);
 			buf.cmdPushConstants(pushConstants);
-			for (uint32_t transformId = 0; transformId < static_cast<uint32_t>(gltf.transforms.size()); transformId++)
+			for (uint32_t transformId = 0; transformId < static_cast<uint32_t>(gltf.nodeTransformRefs.size()); transformId++)
 			{
-				const Transforms transform = gltf.transforms[transformId];
-				const Mesh submesh = gltf.meshesStorage[transform.meshRef];
+				const NodeTransformRef transform = gltf.nodeTransformRefs[transformId];
+				const Mesh submesh = gltf.meshes[transform.meshRef];
 
-				buf.cmdPushDebugGroupLabel(gltf.nodesStorage[transform.nodeRef].name.c_str(), 0xff0000ff);				
+				buf.cmdPushDebugGroupLabel(gltf.nodes[transform.nodeRef].name.c_str(), 0xff0000ff);				
 				buf.cmdDrawIndexed(submesh.indexCount, 1, submesh.indexOffset, submesh.vertexOffset, transformId);
 				buf.cmdPopDebugGroupLabel();
 			}
@@ -512,33 +492,11 @@ void render(SkeletalMesh &gltf, lvk::TextureHandle depthTexture, const glm::mat4
 	ctx->wait(ctx->submit(buf, ctx->getCurrentSwapchainTexture()));
 }
 
-void printPrefix(int ofs)
-{
-	for (int i = 0; i < ofs; i++)
-		printf("\t");
-}
-
-void printMat4(const aiMatrix4x4 &m)
-{
-	if (!m.IsIdentity())
-	{
-		for (int i = 0; i < 4; i++)
-			for (int j = 0; j < 4; j++)
-				printf("%f ;", m[i][j]);
-	}
-	else
-	{
-		printf(" Identity");
-	}
-}
-
-void animate(SkeletalMesh &gltf, AnimationState &anim, float dt)
-{
-	if (gltf.transforms.empty())
+void animate(SkeletalMesh &gltf, AnimationState &anim, float dt) {
+	if (gltf.nodeTransformRefs.empty())
 		return;
 
-	if (gltf.pipelineComputeAnimations.empty())
-	{
+	if (gltf.pipelineComputeAnimations.empty()) {
 		gltf.pipelineComputeAnimations = gltf.ctx_->createComputePipeline({
 			.smComp = gltf.animation,
 		});
@@ -547,19 +505,16 @@ void animate(SkeletalMesh &gltf, AnimationState &anim, float dt)
 	// we support only one single animation at this time
 	anim.active = anim.animId != ~0;
 	gltf.animated = anim.active;
-	if (anim.active)
-	{
+	if (anim.active) {
 		updateAnimation(gltf, anim, dt);
 	}
 }
 
-void animateBlending(SkeletalMesh &gltf, AnimationState &anim1, AnimationState &anim2, float weight, float dt)
-{
-	if (gltf.transforms.empty())
+void animateBlending(SkeletalMesh &gltf, AnimationState &anim1, AnimationState &anim2, float weight, float dt) {
+	if (gltf.nodeTransformRefs.empty())
 		return;
 
-	if (gltf.pipelineComputeAnimations.empty())
-	{
+	if (gltf.pipelineComputeAnimations.empty()) {
 		gltf.pipelineComputeAnimations = gltf.ctx_->createComputePipeline({
 			.smComp = gltf.animation,
 		});
@@ -568,16 +523,12 @@ void animateBlending(SkeletalMesh &gltf, AnimationState &anim1, AnimationState &
 	anim1.active = anim1.animId != ~0;
 	anim2.active = anim2.animId != ~0;
 	gltf.animated = anim1.active || anim2.active;
-	if (anim1.active && anim2.active)
-	{
+	
+	if (anim1.active && anim2.active) {
 		updateAnimationBlending(gltf, anim1, anim2, weight, dt);
-	}
-	else if (anim1.active)
-	{
+	} else if (anim1.active) {
 		updateAnimation(gltf, anim1, dt);
-	}
-	else if (anim2.active)
-	{
+	} else if (anim2.active) {
 		updateAnimation(gltf, anim2, dt);
 	}
 }
