@@ -83,7 +83,7 @@ struct Node
 	uint32_t modelMtxId;
 	glm::mat4 transform = glm::mat4(1);
 	std::vector<NodeRef> children;
-	std::vector<MeshRef> meshes;
+	std::vector<MeshRef> meshRefs;
 };
 
 struct FrameData
@@ -137,7 +137,7 @@ struct SkeletalMesh
 	std::unordered_map<std::string, Bone> bonesByName;
 
 	std::vector<MorphTarget> morphTargets;
-	std::unordered_map<std::string, uint32_t> meshIdNameMap;
+	std::unordered_map<std::string, uint32_t> meshesByName;
 
 	std::vector<MorphState> morphStates;
 	std::vector<Animation> animations;

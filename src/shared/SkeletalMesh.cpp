@@ -90,7 +90,7 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 
 	for (uint32_t m = 0; m < scene->mNumMeshes; ++m) {
 		const aiMesh *mesh = scene->mMeshes[m];
-		gltf.meshIdNameMap[mesh->mName.C_Str()] = m;
+		gltf.meshesByName[mesh->mName.C_Str()] = m;
 
 		for (uint32_t i = 0; i < mesh->mNumVertices; i++) {
 			const aiVector3D v = mesh->mVertices[i];
@@ -231,7 +231,7 @@ void load(SkeletalMesh &gltf, const char *glTFName, const char *glTFDataPath)
 				.indexCount = mesh->mNumFaces * 3
 			});
 
-			gltf.nodes[gltfNode].meshes.push_back(gltf.meshes.size() - 1);
+			gltf.nodes[gltfNode].meshRefs.push_back(gltf.meshes.size() - 1);
 		}
 
 		for (NodeRef i = 0; i < rootNode->mNumChildren; i++) {
@@ -345,7 +345,7 @@ void buildTransformsList(SkeletalMesh &gltf) {
 
 	std::function<void(NodeRef gltfNode)> traverseTree = [&](NodeRef nodeRef) {
 		Node &node = gltf.nodes[nodeRef];
-		for (NodeRef meshId : node.meshes) {
+		for (NodeRef meshId : node.meshRefs) {
 			const Mesh &mesh = gltf.meshes[meshId];
 			gltf.nodeTransformRefs.push_back({
 				.modelMtxId = node.modelMtxId,

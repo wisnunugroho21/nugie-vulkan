@@ -265,7 +265,7 @@ void updateAnimation(SkeletalMesh &glTF, AnimationState &anim, float dt)
 			for (size_t i = 0; i < activeAnim.morphChannels.size(); ++i)
 			{
 				const MorphingChannel &channel = activeAnim.morphChannels[i];
-				const uint32_t meshId = glTF.meshIdNameMap[channel.name];
+				const uint32_t meshId = glTF.meshesByName[channel.name];
 				const MorphTarget &morphTarget = glTF.morphTargets[meshId];
 
 				if (morphTarget.meshId != ~0u)
