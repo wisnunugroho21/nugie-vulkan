@@ -215,14 +215,12 @@ void updateAnimation(SkeletalMesh &glTF, AnimationState &anim, float dt)
 		anim.currentTime = fmodf(anim.currentTime, activeAnim.duration);
 
 	// Apply animations
-	std::function<void(NodeRef gltfNode, const mat4 &parentTransform)> traverseTree = [&](NodeRef gltfNode,
-																							  const mat4 &parentTransform)
-	{
+	std::function<void(NodeRef gltfNode, const mat4 &parentTransform)> traverseTree = 
+	[&](NodeRef gltfNode, const mat4 &parentTransform) {
 		const Bone &bone = glTF.bonesByName[glTF.nodes[gltfNode].name];
 		const uint32_t boneId = bone.boneId;
 
-		if (boneId != ~0u)
-		{
+		if (boneId != ~0u) {
 			assert(boneId == glTF.nodes[gltfNode].modelMtxId);
 			auto channel = activeAnim.channels.find(boneId);
 			const bool hasActiveChannel = channel != activeAnim.channels.end();
@@ -232,26 +230,20 @@ void updateAnimation(SkeletalMesh &glTF, AnimationState &anim, float dt)
 				(hasActiveChannel ? animationTransform(channel->second, anim.currentTime) : glTF.nodes[gltfNode].transform);
 
 			glTF.skinning = true;
-		}
-		else
-		{
+		} else {
 			glTF.nodeTransformMatrices[glTF.nodes[gltfNode].modelMtxId] = parentTransform * glTF.nodes[gltfNode].transform;
 		}
 
-		for (uint32_t i = 0; i < glTF.nodes[gltfNode].children.size(); i++)
-		{
+		for (uint32_t i = 0; i < glTF.nodes[gltfNode].children.size(); i++) {
 			const NodeRef child = glTF.nodes[gltfNode].children[i];
-
 			traverseTree(child, glTF.nodeTransformMatrices[glTF.nodes[gltfNode].modelMtxId]);
 		}
 	};
 
 	traverseTree(glTF.root, mat4(1.0f));
 
-	for (const std::pair<std::string, Bone> &b : glTF.bonesByName)
-	{
-		if (b.second.boneId != ~0u)
-		{
+	for (const std::pair<std::string, Bone> &b : glTF.bonesByName) {
+		if (b.second.boneId != ~0u) {
 			glTF.nodeTransformMatrices[b.second.boneId] = glTF.nodeTransformMatrices[b.second.boneId] * b.second.transform;
 		}
 	}

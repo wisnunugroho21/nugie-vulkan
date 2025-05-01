@@ -177,6 +177,3 @@ void load(SkeletalMesh &context, const char *gltfName, const char *glTFDataPath)
 void render(SkeletalMesh &context, lvk::TextureHandle depthTexture, const glm::mat4 &model, const glm::mat4 &view, const glm::mat4 &proj, bool rebuildRenderList = false);
 void animate(SkeletalMesh &gltf, AnimationState &anim, float dt);
 void animateBlending(SkeletalMesh &gltf, AnimationState &anim1, AnimationState &anim2, float weight, float dt);
-
-void printPrefix(int ofs);
-void printMat4(const aiMatrix4x4 &m);
