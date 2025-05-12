@@ -13,6 +13,7 @@ static void shaderModuleCallback(lvk::IContext *, lvk::ShaderModuleHandle handle
 }
 
 VulkanApp::VulkanApp(const VulkanAppConfig &cfg) : cfg_(cfg) {
+	ImGui::CreateContext();
 	minilog::initialize(nullptr, {.threadNames = false});
 
 	int width = -95;
@@ -24,16 +25,6 @@ VulkanApp::VulkanApp(const VulkanAppConfig &cfg) : cfg_(cfg) {
 
 	window_ = lvk::initWindow("Simple example", width, height);
 	ctx_ = lvk::createVulkanContextWithSwapchain(window_, width, height, cfg_.contextConfig);
-
-	depthTexture_ = ctx_->createTexture({
-		.type = lvk::TextureType_2D,
-		.format = lvk::Format_Z_F32,
-		.dimensions = {(uint32_t)width, (uint32_t)height},
-		.usage = lvk::TextureUsageBits_Attachment,
-		.debugName = "Depth buffer",
-	});
-
-	imgui_ = std::make_unique<lvk::ImGuiRenderer>(*ctx_, "../../data/OpenSans-Light.ttf", 30.0f);
 
 	glfwSetWindowUserPointer(window_, this);
 	glfwSetMouseButtonCallback(window_, 
@@ -76,9 +67,11 @@ VulkanApp::VulkanApp(const VulkanAppConfig &cfg) : cfg_(cfg) {
 
 			ImGui::GetIO().MousePos = ImVec2(x, y);
 			app->mouseState_.pos.x  = static_cast<float>(x / width);
-			app->mouseState_.pos.y  = 1.0f - static_cast<float>(y / height); });
-			glfwSetKeyCallback(window_, [](GLFWwindow *window, int key, int scancode, int action, int mods)
-							{
+			app->mouseState_.pos.y  = 1.0f - static_cast<float>(y / height); 
+		});
+
+	glfwSetKeyCallback(window_, 
+		[](GLFWwindow *window, int key, int scancode, int action, int mods) {
 			VulkanApp* app     = (VulkanApp*)glfwGetWindowUserPointer(window);
 			const bool pressed = action != GLFW_RELEASE;
 
@@ -112,19 +105,11 @@ VulkanApp::VulkanApp(const VulkanAppConfig &cfg) : cfg_(cfg) {
 }
 
 VulkanApp::~VulkanApp() {
-	gridPipeline = nullptr;
-	gridVert = nullptr;
-	gridFrag = nullptr;
-	imgui_ = nullptr;
-	depthTexture_ = nullptr;
 	ctx_ = nullptr;
+	ImGui::DestroyContext();
 
 	glfwDestroyWindow(window_);
 	glfwTerminate();
-}
-
-lvk::Format VulkanApp::getDepthFormat() const {
-	return ctx_->getFormat(depthTexture_);
 }
 
 void VulkanApp::run(DrawFrameFunc drawFrame) {
@@ -150,120 +135,8 @@ void VulkanApp::run(DrawFrameFunc drawFrame) {
 		const float ratio = width / (float)height;
 
 		positioner_.update(deltaSeconds, mouseState_.pos, ImGui::GetIO().WantCaptureMouse ? false : mouseState_.pressedLeft);
+		projection_.setAspectRatio(ratio);
 
-		drawFrame((uint32_t)width, (uint32_t)height, ratio, deltaSeconds);
+		drawFrame((uint32_t)width, (uint32_t)height, deltaSeconds);
 	}
-}
-
-void VulkanApp::drawMemo() {
-	ImGui::SetNextWindowPos(ImVec2(10, 10));
-	ImGui::Begin(
-		"Keyboard hints:", nullptr,
-		ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoCollapse);
-	ImGui::Text("W/S/A/D - camera movement");
-	ImGui::Text("1/2 - camera up/down");
-	ImGui::Text("Shift - fast movement");
-	ImGui::Text("Space - reset view");
-	ImGui::End();
-}
-
-void VulkanApp::drawGTFInspector_Cameras(GLTFIntrospective &intro) {
-	if (!intro.showCameras)
-		return;
-
-	ImGui::Begin("Cameras:", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoCollapse);
-	std::string current_item = intro.activeCamera != ~0u ? intro.cameras[intro.activeCamera] : "";
-
-	if (ImGui::BeginCombo("##combo", current_item.c_str())) {
-		for (uint32_t n = 0; n < intro.cameras.size(); n++) {
-			bool is_selected = (current_item == intro.cameras[n]);
-
-			if (ImGui::Selectable(intro.cameras[n].c_str(), is_selected)) {
-				intro.activeCamera = n;
-				current_item = intro.cameras[n];
-			}
-			
-			if (is_selected)
-				ImGui::SetItemDefaultFocus();
-		}
-
-		ImGui::EndCombo();
-	}
-
-	ImGui::End();
-}
-
-void VulkanApp::drawGTFInspector(GLTFIntrospective &intro) {
-	if (!cfg_.showGLTFInspector) {
-		return;
-	}
-
-	ImGui::SetNextWindowPos(ImVec2(10, 300));
-	drawGTFInspector_Cameras(intro);
-}
-
-void VulkanApp::drawFPS() {
-	if (const ImGuiViewport *v = ImGui::GetMainViewport()) {
-		ImGui::SetNextWindowPos({v->WorkPos.x + v->WorkSize.x - 15.0f, v->WorkPos.y + 15.0f}, ImGuiCond_Always, {1.0f, 0.0f});
-	}
-
-	ImGui::SetNextWindowBgAlpha(0.30f);
-	ImGui::SetNextWindowSize(ImVec2(ImGui::CalcTextSize("FPS : _______").x, 0));
-	if (ImGui::Begin(
-			"##FPS", nullptr,
-			ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
-				ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove
-		)
-	) {
-		ImGui::Text("FPS : %i", (int)fpsCounter_.getFPS());
-		ImGui::Text("Ms  : %.1f", fpsCounter_.getFPS() > 0 ? 1000.0 / fpsCounter_.getFPS() : 0);
-	}
-
-	ImGui::End();
-}
-
-void VulkanApp::drawGrid(lvk::ICommandBuffer &buf, const mat4 &proj, const vec3 &origin, uint32_t numSamples, lvk::Format colorFormat) {
-	drawGrid(buf, proj * camera_.getViewMatrix(), origin, camera_.getPosition(), numSamples, colorFormat);
-}
-
-void VulkanApp::drawGrid(
-	lvk::ICommandBuffer &buf, const mat4 &mvp, const vec3 &origin, const vec3 &camPos, uint32_t numSamples, lvk::Format colorFormat)
-{
-	if (gridPipeline.empty() || pipelineSamples != numSamples) {
-		gridVert = loadShaderModule(ctx_, "../../src/shaders/grid/Grid.vert");
-		gridFrag = loadShaderModule(ctx_, "../../src/shaders/grid/Grid.frag");
-
-		pipelineSamples = numSamples;
-
-		gridPipeline = ctx_->createRenderPipeline({
-			.smVert = gridVert,
-			.smFrag = gridFrag,
-			.color = {{
-				.format = colorFormat != lvk::Format_Invalid ? colorFormat : ctx_->getSwapchainFormat(),
-				.blendEnabled = true,
-				.srcRGBBlendFactor = lvk::BlendFactor_SrcAlpha,
-				.dstRGBBlendFactor = lvk::BlendFactor_OneMinusSrcAlpha,
-			}},
-			.depthFormat = this->getDepthFormat(),
-			.samplesCount = numSamples,
-			.debugName = "Pipeline: drawGrid()",
-		});
-	}
-
-	const struct {
-		mat4 mvp;
-		vec4 camPos;
-		vec4 origin;
-	} pc = {
-		.mvp = mvp,
-		.camPos = vec4(camPos, 1.0f),
-		.origin = vec4(origin, 1.0f),
-	};
-
-	buf.cmdPushDebugGroupLabel("Grid", 0xff0000ff);
-	buf.cmdBindRenderPipeline(gridPipeline);
-	buf.cmdBindDepthState({.compareOp = lvk::CompareOp_Less, .isDepthWriteEnabled = false});
-	buf.cmdPushConstants(pc);
-	buf.cmdDraw(6);
-	buf.cmdPopDebugGroupLabel();
 }

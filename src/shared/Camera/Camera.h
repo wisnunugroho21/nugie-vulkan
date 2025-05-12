@@ -16,10 +16,16 @@ public:
 	virtual glm::vec3 getPosition() const = 0;
 };
 
+class CameraProjectionInterface {
+public:
+	virtual ~CameraProjectionInterface() = default;
+	virtual glm::mat4 getProjection() const = 0;
+};
+
 class Camera final {
 public:
-	explicit Camera(CameraPositionerInterface &positioner)
-		: positioner_(&positioner)
+	explicit Camera(const CameraPositionerInterface *positioner, const CameraProjectionInterface *projection)
+		: positioner_(positioner), projection_{projection}
 	{
 	}
 
@@ -28,11 +34,29 @@ public:
 
 	glm::mat4 getViewMatrix() const { return positioner_->getViewMatrix(); }
 	glm::vec3 getPosition() const { return positioner_->getPosition(); }
-	glm::mat4 getProjMatrix() const { return proj_; }
+	glm::mat4 getProjMatrix() const { return projection_->getProjection(); }
 
 private:
 	const CameraPositionerInterface *positioner_;
-	glm::mat4 proj_;
+	const CameraProjectionInterface *projection_;
+};
+
+class CameraProjection_Perspective : public CameraProjectionInterface {
+public:
+	~CameraProjection_Perspective() = default;
+	CameraProjection_Perspective(float fovy, float aspectRatio, float near, float far);	
+
+	void setAspectRatio(float aspectRatio);
+
+	void setFovy(float fovy);
+
+	glm::mat4 getProjection() const override;
+
+private:
+	float fovy_; 
+	float aspectRatio_;
+	float near_;
+	float far_;
 };
 
 class CameraPositioner_FirstPerson final : public CameraPositionerInterface {

@@ -110,7 +110,7 @@ lvk::ShaderStage lvkShaderStageFromFileName(const char *fileName) {
 	return lvk::Stage_Vert;
 }
 
-lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(const std::unique_ptr<lvk::IContext> &ctx, const char *fileName) {
+lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(lvk::IContext* const ctx, const char *fileName) {
 	const std::string code = readShaderFile(fileName);
 	const lvk::ShaderStage stage = lvkShaderStageFromFileName(fileName);
 
@@ -132,7 +132,7 @@ lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(const std::unique_ptr<lvk:
 	return handle;
 }
 
-lvk::Holder<lvk::TextureHandle> loadTexture(const std::unique_ptr<lvk::IContext> &ctx, 
+lvk::Holder<lvk::TextureHandle> loadTexture(lvk::IContext* const ctx, 
 	const char *fileName, lvk::TextureType textureType, bool sRGB) 
 {
 	const bool isKTX = endsWith(fileName, ".ktx") || endsWith(fileName, ".KTX");

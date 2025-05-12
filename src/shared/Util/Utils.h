@@ -20,9 +20,9 @@ std::string readShaderFile(const char *fileName);
 
 VkShaderStageFlagBits vkShaderStageFromFileName(const char *fileName);
 
-lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(const std::unique_ptr<lvk::IContext> &ctx, const char *fileName);
+lvk::Holder<lvk::ShaderModuleHandle> loadShaderModule(lvk::IContext* const ctx, const char *fileName);
 lvk::Holder<lvk::TextureHandle> loadTexture(
-	const std::unique_ptr<lvk::IContext> &ctx, const char *fileName, lvk::TextureType textureType = lvk::TextureType_2D, bool sRGB = false);
+	lvk::IContext* const ctx, const char *fileName, lvk::TextureType textureType = lvk::TextureType_2D, bool sRGB = false);
 
 template <typename T>
 inline void mergeVectors(std::vector<T> &v1, const std::vector<T> &v2) {

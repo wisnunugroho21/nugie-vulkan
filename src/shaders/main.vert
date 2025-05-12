@@ -1,25 +1,21 @@
 //
+#version 460
 
-#include <../../src/shaders/oit/common.sp>
+layout (location=0) out vec3 color;
 
-layout (location=0) in vec3 in_pos;
-layout (location=1) in vec2 in_tc;
-layout (location=2) in vec3 in_normal;
+const vec2 pos[3] = vec2[3](
+	vec2(-0.6, -0.4),
+	vec2( 0.6, -0.4),
+	vec2( 0.0,  0.6)
+);
 
-layout (location=0) out vec2 uv;
-layout (location=1) out vec3 normal;
-layout (location=2) out vec3 worldPos;
-layout (location=3) out flat uint materialId;
-layout (location=4) out vec4 shadowCoords;
+const vec3 col[3] = vec3[3](
+	vec3(1.0, 0.0, 0.0),
+	vec3(0.0, 1.0, 0.0),
+	vec3(0.0, 0.0, 1.0)
+);
 
 void main() {
-  mat4 model = pc.transforms.model[pc.drawData.dd[gl_BaseInstance].transformId];
-  gl_Position = pc.viewProj * model * vec4(in_pos, 1.0);
-  uv = vec2(in_tc.x, 1.0-in_tc.y);
-  normal = transpose( inverse(mat3(model)) ) * in_normal;
-  vec4 posClip = model * vec4(in_pos, 1.0);
-  worldPos = posClip.xyz/posClip.w;
-  materialId = pc.drawData.dd[gl_BaseInstance].materialId;
-
-  shadowCoords = pc.light.viewProjBias * posClip;
+	gl_Position = vec4(pos[gl_VertexIndex], 0.0, 1.0);
+	color = col[gl_VertexIndex];
 }

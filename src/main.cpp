@@ -15,12 +15,49 @@
 
 int main() {
 	VulkanApp app({
-		.initialCameraPos = vec3(0, 0, -6.359f),
+		.initialCameraPos = vec3(0, 0, -5.0f),
 		.initialCameraTarget = vec3(0, 0, 0)
 	});
 
-	app.run([&](uint32_t width, uint32_t height, float aspectRatio, float deltaSeconds) {
+	lvk::Holder<lvk::ShaderModuleHandle> vert = loadShaderModule(app.ctx_.get(), "../../src/shaders/main.vert");
+	lvk::Holder<lvk::ShaderModuleHandle> frag = loadShaderModule(app.ctx_.get(), "../../src/shaders/main.frag");
 
+	lvk::Holder<lvk::RenderPipelineHandle> rpTriangle = app.ctx_->createRenderPipeline({
+		.smVert = vert,
+		.smFrag = frag,
+		.color = {
+			{
+				.format = app.ctx_->getSwapchainFormat()
+			}
+		}
+	});
+
+	app.run([&](uint32_t width, uint32_t height, float deltaSeconds) {
+		lvk::ICommandBuffer& commandBuf = app.ctx_->acquireCommandBuffer();
+
+		commandBuf.cmdBeginRendering({
+			.color = {
+				{
+					.loadOp = lvk::LoadOp_Clear,
+					.clearColor = { 1.0f, 1.0f, 1.0f, 1.0f }
+				}
+			}
+		}, {
+			.color = {
+				{
+					.texture = app.ctx_->getCurrentSwapchainTexture()
+				}
+			}
+		});
+
+		commandBuf.cmdBindRenderPipeline(rpTriangle);
+		commandBuf.cmdPushDebugGroupLabel("Render Triangle", 0xff0000ff);
+		commandBuf.cmdDraw(3);
+		commandBuf.cmdPopDebugGroupLabel();
+
+		commandBuf.cmdEndRendering();
+
+		app.ctx_->submit(commandBuf, app.ctx_->getCurrentSwapchainTexture());
 	});
 	
 	return 0;
