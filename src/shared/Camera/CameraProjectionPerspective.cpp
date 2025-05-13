@@ -13,6 +13,6 @@ void CameraProjection_Perspective::setFovy(float fovy) {
     fovy_ = fovy;
 }
 
-glm::mat4 CameraProjection_Perspective::getProjection() const {
+glm::mat4 CameraProjection_Perspective::getProjectionMatrix() const {
     return glm::perspective(fovy_, aspectRatio_, near_, far_);
 }

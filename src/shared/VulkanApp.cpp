@@ -16,8 +16,8 @@ VulkanApp::VulkanApp(const VulkanAppConfig &cfg) : cfg_(cfg) {
 	ImGui::CreateContext();
 	minilog::initialize(nullptr, {.threadNames = false});
 
-	int width = -95;
-	int height = -90;
+	int width = 1280;
+	int height = 720;
 
 	if (cfg_.contextConfig.shaderModuleErrorCallback == nullptr) {
 		cfg_.contextConfig.shaderModuleErrorCallback = &shaderModuleCallback;

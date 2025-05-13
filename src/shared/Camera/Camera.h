@@ -19,7 +19,7 @@ public:
 class CameraProjectionInterface {
 public:
 	virtual ~CameraProjectionInterface() = default;
-	virtual glm::mat4 getProjection() const = 0;
+	virtual glm::mat4 getProjectionMatrix() const = 0;
 };
 
 class Camera final {
@@ -34,7 +34,7 @@ public:
 
 	glm::mat4 getViewMatrix() const { return positioner_->getViewMatrix(); }
 	glm::vec3 getPosition() const { return positioner_->getPosition(); }
-	glm::mat4 getProjMatrix() const { return projection_->getProjection(); }
+	glm::mat4 getProjMatrix() const { return projection_->getProjectionMatrix(); }
 
 private:
 	const CameraPositionerInterface *positioner_;
@@ -50,7 +50,7 @@ public:
 
 	void setFovy(float fovy);
 
-	glm::mat4 getProjection() const override;
+	glm::mat4 getProjectionMatrix() const override;
 
 private:
 	float fovy_; 
