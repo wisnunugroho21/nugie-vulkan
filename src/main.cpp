@@ -100,7 +100,6 @@ void loadGLTFModel(const char *filename, TotalMeshData* const totalMeshData, std
 		startIndices.push_back(static_cast<uint32_t>(totalMeshData->indices.size()));
 	}
 
-
 	for (uint32_t m = 0; m < scene->mNumMeshes; m++) {
 		meshes->push_back(Mesh{
 			.vertexOffset = startVertex[m],
@@ -113,14 +112,14 @@ void loadGLTFModel(const char *filename, TotalMeshData* const totalMeshData, std
 
 int main() {
 	VulkanApp app({
-		.initialCameraPos = vec3(0, 0, -3.0f),
+		.initialCameraPos = vec3(0, 0, 3.0f),
 		.initialCameraTarget = vec3(0, 0, 0)
 	});
 
 	TotalMeshData totalMeshData{};
 	std::vector<Mesh> meshes;
 
-	loadGLTFModel("../../data/box/Box.gltf", &totalMeshData, &meshes);
+	loadGLTFModel("../../data/rubber_duck/Duck.gltf", &totalMeshData, &meshes);
 
 	lvk::Holder<lvk::ShaderModuleHandle> vert = loadShaderModule(app.ctx_.get(), "../../src/shaders/main.vert");
 	lvk::Holder<lvk::ShaderModuleHandle> frag = loadShaderModule(app.ctx_.get(), "../../src/shaders/main.frag");
@@ -197,7 +196,10 @@ int main() {
 		.cullMode = lvk::CullMode_Back
 	});
 
-	const mat4 m = glm::rotate(mat4(1.0f), glm::radians(-45.0f), vec3(1, 0, 0));
+	mat4 m = mat4(1.0f);
+	m = glm::translate(m, glm::vec3(0.0, 0.0, 0.0));
+	m = glm::scale(m, glm::vec3(0.01, 0.01, 0.01));
+	m = glm::rotate(m, glm::radians(0.0f), vec3(1, 0, 0));
     /* const mat4 v = glm::rotate(glm::translate(mat4(1.0f), vec3(0.0f, -0.5f, -1.5f)), 0.0f, vec3(0.0f, 1.0f, 0.0f));
     const mat4 p = glm::perspective(45.0f, 1280.0f / 720.0f, 0.1f, 1000.0f);
 
