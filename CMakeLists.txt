@@ -6,8 +6,6 @@ SETUP_APP(Nugie_Engine "Nugie Engine")
 
 add_subdirectory(libraries/lightweightvk)
 target_link_libraries(${PROJECT_NAME} PRIVATE LVKLibrary)
-target_link_libraries(${PROJECT_NAME} PRIVATE slang)
-target_link_libraries(${PROJECT_NAME} PRIVATE core)
 
 add_subdirectory(libraries/glm)
 target_link_libraries(${PROJECT_NAME} PRIVATE glm)
