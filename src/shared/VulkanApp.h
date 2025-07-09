@@ -16,8 +16,6 @@
 #include "shared/Math/FramesPerSecondCounter.h"
 #include "shared/Camera/Camera.h"
 #include "shared/Util/Utils.h"
-#include "shared/Cubemap/Bitmap.h"
-#include "shared/Cubemap/Utils.h"
 
 #include <functional>
 
