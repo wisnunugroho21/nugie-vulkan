@@ -61,3 +61,5 @@ void loadStringList(FILE *f, std::vector<std::string> &lines);
 int addUnique(std::vector<std::string> &files, const std::string &file);
 std::string replaceAll(const std::string &str, const std::string &oldSubStr, const std::string &newSubStr);
 std::string lowercaseString(const std::string &s); // convert 8-bit ASCII string to upper case
+
+lvk::Holder<lvk::ShaderModuleHandle> createShaderModuleFromSPIRV(lvk::IContext* ctx, const char *filename, lvk::ShaderStage stage, const char* debugName);

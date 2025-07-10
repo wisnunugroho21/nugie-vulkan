@@ -1,3 +1,4 @@
+#include <fstream>
 #include <string.h>
 #include <string>
 #if !defined(__APPLE__)
@@ -279,4 +280,29 @@ std::string lowercaseString(const std::string &s) {
 	std::string out(s.length(), ' ');
 	std::transform(s.begin(), s.end(), out.begin(), tolower);
 	return out;
+}
+
+lvk::Holder<lvk::ShaderModuleHandle> createShaderModuleFromSPIRV(lvk::IContext* ctx, const char *filename, lvk::ShaderStage stage, const char* debugName) 
+{
+	// Open the file in binary mode and at the end to get the file size
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+    
+    if (!file) {
+        throw std::runtime_error("Failed to open SPIR-V file");
+    }
+
+	// Get the file size
+    size_t fileSize = static_cast<size_t>(file.tellg());
+
+	// Create a buffer to hold the file content
+    char* buffer = new char[fileSize];
+
+	// Seek back to the beginning of the file and read the content
+    file.seekg(0);
+    file.read(buffer, fileSize);
+
+	// Close the file
+	file.close();
+
+    return ctx->createShaderModule({buffer, fileSize, stage, debugName});
 }
