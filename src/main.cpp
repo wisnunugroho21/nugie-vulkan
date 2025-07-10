@@ -42,31 +42,6 @@ struct TotalMeshData {
 	std::vector<uint32_t> indices;
 };
 
-lvk::Holder<lvk::ShaderModuleHandle> createShaderModuleFromSPIRV(VulkanApp &app, const char *filename, lvk::ShaderStage stage, const char* debugName) 
-{
-	// Open the file in binary mode and at the end to get the file size
-    std::ifstream file(filename, std::ios::ate | std::ios::binary);
-    
-    if (!file) {
-        throw std::runtime_error("Failed to open SPIR-V file");
-    }
-
-	// Get the file size
-    size_t fileSize = static_cast<size_t>(file.tellg());
-
-	// Create a buffer to hold the file content
-    char* buffer = new char[fileSize];
-
-	// Seek back to the beginning of the file and read the content
-    file.seekg(0);
-    file.read(buffer, fileSize);
-
-	// Close the file
-	file.close();
-
-    return app.ctx_->createShaderModule({buffer, fileSize, stage, debugName});
-}
-
 void loadGLTFModel(const char *filename, TotalMeshData* const totalMeshData, std::vector<Mesh>* const meshes) {
 	const aiScene *scene = aiImportFile(filename, aiProcess_Triangulate);
 
@@ -148,8 +123,8 @@ int main() {
 
 	loadGLTFModel("../../data/rubber_duck/Duck.gltf", &totalMeshData, &meshes);
 
-	lvk::Holder<lvk::ShaderModuleHandle> vert = createShaderModuleFromSPIRV(app, "../../src/shaders/main.vert.spv", lvk::Stage_Vert, "Shader Module: main (vert)");
-	lvk::Holder<lvk::ShaderModuleHandle> frag = createShaderModuleFromSPIRV(app, "../../src/shaders/main.frag.spv", lvk::Stage_Frag, "Shader Module: main (frag)");
+	lvk::Holder<lvk::ShaderModuleHandle> vert = createShaderModuleFromSPIRV(app.ctx_.get(), "../../src/shaders/main.vert.spv", lvk::Stage_Vert, "Shader Module: main (vert)");
+	lvk::Holder<lvk::ShaderModuleHandle> frag = createShaderModuleFromSPIRV(app.ctx_.get(), "../../src/shaders/main.frag.spv", lvk::Stage_Frag, "Shader Module: main (frag)");
 
 	lvk::Holder<lvk::BufferHandle> vertexBuffer = app.ctx_->createBuffer({
 		.usage = lvk::BufferUsageBits_Vertex,
